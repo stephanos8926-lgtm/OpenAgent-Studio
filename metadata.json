@@ -1,0 +1,6 @@
+{
+  "name": "DeepAgent IDE",
+  "description": "An AI studio build mode clone allowing you to write, build, and run apps completely from your browser powered by LangGraph, open-source models natively supporting free tool-calling, and custom UI components.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

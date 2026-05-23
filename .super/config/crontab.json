@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cron_health",
+    "schedule": "*/10 * * * * *",
+    "description": "Examine state of running processes and system resources",
+    "command": "syscheck"
+  },
+  {
+    "id": "cron_fs_checkpoint",
+    "schedule": "0 * * * * *",
+    "description": "Serialize and checkpoint VFS RAM snapshot to physical disk image",
+    "command": "checkpoint_fs"
+  },
+  {
+    "id": "cron_log_cleaner",
+    "schedule": "0 */5 * * * *",
+    "description": "Purge historical rotated syslog logs older than virtual thresholds",
+    "command": "logrotate"
+  },
+  {
+    "id": "cron_vm_job",
+    "schedule": "*/20 * * * * *",
+    "description": "Execute bytecode program to calculate daily virtual telemetry stats",
+    "command": "vmrun /bin/telemetry.bin"
+  }
+]

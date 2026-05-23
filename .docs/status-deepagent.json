@@ -1,0 +1,37 @@
+{
+  "completed": [
+    "ui-layout-setup",
+    "editor-integration",
+    "vfs-concept-implementation",
+    "langgraph-agent-factory",
+    "sse-api-streaming",
+    "shell-exec-tool-memory-host",
+    "configurable-backend-settings",
+    "file-tree-directories-fix",
+    "documentation-updates",
+    "langgraph-state-graph-implementation",
+    "tree-sitter-semantic-maps",
+    "granular-roles-and-tools",
+    "context-compression-implementation",
+    "auto-healing-build-auditor",
+    "background-scheduler-service",
+    "persistent-summary-context",
+    "tiered-agent-architecture",
+    "security-warden-implementation",
+    "structured-task-dag",
+    "swarm-observability-mesh-ui",
+    "real-time-agent-telemetry",
+    "sqlite-persistence-layer",
+    "streaming-terminal-output-ui",
+    "feature-parity-research",
+    "terminal-ui-bidirectional-pty",
+    "simulated-embedded-operating-system"
+  ],
+  "in_progress": [],
+  "blocked": [],
+  "next": [
+    "swarm-visualization-ui",
+    "tree-sitter-background-daemon",
+    "file-system-watchers"
+  ]
+}

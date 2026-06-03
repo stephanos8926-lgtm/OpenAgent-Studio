@@ -25,13 +25,17 @@
     "streaming-terminal-output-ui",
     "feature-parity-research",
     "terminal-ui-bidirectional-pty",
-    "simulated-embedded-operating-system"
+    "simulated-embedded-operating-system",
+    "openrouter-model-selection",
+    "tree-sitter-background-daemon",
+    "file-system-watchers",
+    "container-adapter-pattern",
+    "grep-ast-tool",
+    "swarm-visualization-ui",
+    "pino-pretty-boot-loop-fix",
+    "smooth-pacing-loading-transitions"
   ],
   "in_progress": [],
   "blocked": [],
-  "next": [
-    "swarm-visualization-ui",
-    "tree-sitter-background-daemon",
-    "file-system-watchers"
-  ]
+  "next": []
 }

@@ -17,9 +17,12 @@ import {
   Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { TaskDAGD3 } from './TaskDAGD3';
+import { SwarmConsole } from './SwarmConsole';
+import { SwarmRadar } from './SwarmRadar';
 
 export const MeshController = () => {
-  const { swarmState, setSwarmState, terminalLogs } = useAppStore();
+  const { swarmState, setSwarmState, terminalLogs, activeBreakpoint, setBreakpoint } = useAppStore();
   const { activeAgent, tasks, health } = swarmState;
   const [showSettings, setShowSettings] = useState(false);
   const [governanceMode, setGovernanceMode] = useState(false);
@@ -48,9 +51,41 @@ export const MeshController = () => {
     }
   };
 
+  const fetchBreakpointStatus = async () => {
+    const threadId = localStorage.getItem('threadId');
+    if (!threadId) return;
+    try {
+      const res = await fetch(`/api/swarm/status?threadId=${encodeURIComponent(threadId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.next && data.next.length > 0) {
+            setBreakpoint(data.next[0] || null);
+          } else {
+            setBreakpoint(null);
+          }
+          
+          if (data.values) {
+            setSwarmState({
+              tasks: data.values.task_dag || [],
+              health: data.values.environment_health || 'unknown',
+              activeAgent: data.values.current_agent || null
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load breakpoint status:", err);
+    }
+  };
+
   useEffect(() => {
     fetchCheckpoints();
-    const interval = setInterval(fetchCheckpoints, 8000);
+    fetchBreakpointStatus();
+    const interval = setInterval(() => {
+      fetchCheckpoints();
+      fetchBreakpointStatus();
+    }, 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -70,6 +105,7 @@ export const MeshController = () => {
         setLocalMessage({ text: `State successfully reverted back to checkpoint: ${chkId.substring(0, 8)}`, type: 'success' });
         setConfirmRevertId(null);
         await fetchCheckpoints();
+        await fetchBreakpointStatus();
       } else {
         setLocalMessage({ text: `Failed to revert: ${data.message || 'Unknown error'}`, type: 'error' });
       }
@@ -100,7 +136,7 @@ export const MeshController = () => {
       iterations++;
       for (const t of taskList) {
         let maxDepLevel = -1;
-        for (const depId of t.dependencies) {
+        for (const depId of (t.dependsOn || [])) {
           const depLevel = levels[depId];
           if (depLevel !== undefined && depLevel > maxDepLevel) {
             maxDepLevel = depLevel;
@@ -186,63 +222,11 @@ export const MeshController = () => {
           </div>
         </div>
 
-        {/* Swarm Visualization */}
-        <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2 uppercase tracking-wider">
-              <Zap className="w-4 h-4 text-yellow-500" />
-              Active Intelligence Mesh
-            </h2>
-            <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono">
-              <Activity className="w-3 h-3 text-blue-500" />
-              REAL-TIME TELEMETRY
-            </div>
-          </div>
-          
-          <div className="p-6 md:p-10 overflow-x-auto">
-            <div className="flex items-center justify-between min-w-[800px] md:min-w-0">
-              {agents.map((agent, idx) => {
-                const isActive = activeAgent === agent.id;
-                return (
-                  <React.Fragment key={agent.id}>
-                    <motion.div 
-                      initial={false}
-                      animate={{ 
-                        scale: isActive ? 1.05 : 1,
-                        borderColor: isActive ? '#3b82f6' : '#f3f4f6',
-                        backgroundColor: isActive ? '#eff6ff' : '#ffffff'
-                      }}
-                      className={`relative p-5 rounded-xl border-2 w-44 text-center transition-all ${
-                        isActive ? 'shadow-lg shadow-blue-100 ring-2 ring-blue-100' : 'hover:border-gray-200'
-                      }`}
-                    >
-                      <AnimatePresence>
-                        {isActive && (
-                          <motion.div 
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest whitespace-nowrap"
-                          >
-                            Executing Loop
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                      <Cpu className={`w-8 h-8 mx-auto mb-3 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-300'}`} />
-                      <div className="font-bold text-gray-900 text-sm">{agent.name}</div>
-                      <div className="text-[10px] text-gray-400 uppercase font-bold mt-1 leading-tight">{agent.role}</div>
-                    </motion.div>
-                    {idx < agents.length - 1 && (
-                      <div className="flex-1 flex justify-center">
-                        <ArrowRight className={`w-5 h-5 ${isActive ? 'text-blue-400' : 'text-gray-200'}`} />
-                      </div>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </div>
-        </section>
+        {/* Swarm Console & Intelligence Mesh Visuals */}
+        <SwarmConsole />
+
+        {/* Real-time Swarm Radar Mapping */}
+        <SwarmRadar />
 
         {/* Task DAG & Governance Grid */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
@@ -281,89 +265,7 @@ export const MeshController = () => {
             <div className="space-y-4">
               {tasks.length > 0 ? (
                 viewMode === 'visual' ? (
-                  <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm relative overflow-x-auto">
-                    <div className="min-w-[500px] md:min-w-0 md:w-full h-[300px] relative overflow-hidden">
-                      <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet">
-                        {/* Connection vectors */}
-                        {tasks.map(task => 
-                          task.dependencies.map(depId => {
-                            const from = nodeCoordinates[depId];
-                            const to = nodeCoordinates[task.id];
-                            if (!from || !to) return null;
-                            const dx = to.x - from.x;
-                            const cp1x = from.x + dx * 0.4;
-                            const cp1y = from.y;
-                            const cp2x = from.x + dx * 0.6;
-                            const cp2y = to.y;
-                            const d = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
-                            
-                            const isCompleted = task.status === 'completed' && tasks.find(t => t.id === depId)?.status === 'completed';
-                            const isActive = task.status === 'in_progress' || tasks.find(t => t.id === depId)?.status === 'in_progress';
-                            
-                            let strokeColor = '#e2e8f0';
-                            let strokeClass = '';
-                            if (isCompleted) {
-                              strokeColor = '#22c55e';
-                            } else if (isActive) {
-                              strokeColor = '#3b82f6';
-                              strokeClass = 'animate-dash-blue';
-                            }
-                            
-                            return (
-                              <path 
-                                key={`${depId}-${task.id}`}
-                                d={d}
-                                fill="none"
-                                stroke={strokeColor}
-                                strokeWidth={isActive ? "2.5" : isCompleted ? "2" : "1.5"}
-                                className={strokeClass}
-                              />
-                            );
-                          })
-                        )}
-                      </svg>
-
-                      {/* Absolute positioned nodes */}
-                      {tasks.map(task => {
-                        const coords = nodeCoordinates[task.id] || { x: 400, y: 150 };
-                        const isCompleted = task.status === 'completed';
-                        const isInProgress = task.status === 'in_progress';
-                        const isFailed = task.status === 'failed';
-                        
-                        return (
-                          <div 
-                            key={task.id}
-                            className={`absolute p-2.5 rounded-xl border text-center transition-all bg-white w-[130px] shadow-sm select-none hover:shadow-md hover:-translate-y-0.5 duration-200 ${
-                              isInProgress ? 'border-blue-400 ring-2 ring-blue-50 bg-blue-50/20 shadow-blue-50' :
-                              isCompleted ? 'border-green-200 bg-green-50/10' :
-                              isFailed ? 'border-red-200 bg-red-50/10' : 'border-gray-100 hover:border-gray-200'
-                            }`}
-                            style={{
-                              left: `${coords.x}px`,
-                              top: `${coords.y}px`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
-                            title={`${task.id}: ${task.description}`}
-                          >
-                            <div className="flex flex-col items-center">
-                              <div className="flex items-center gap-1.5 mb-1 justify-center w-full">
-                                {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
-                                {isInProgress && <Clock className="w-3.5 h-3.5 text-blue-500 animate-spin-slow flex-shrink-0" />}
-                                {isFailed && <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
-                                {!isCompleted && !isInProgress && !isFailed && <Circle className="w-3.5 h-3.5 text-gray-200 flex-shrink-0" />}
-                                <span className="text-[9px] font-bold text-gray-850 font-mono truncate max-w-[80px]">
-                                  {task.id}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-gray-500 leading-tight font-medium text-center line-clamp-2 px-1 max-w-[120px]">
-                                {task.description}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <TaskDAGD3 tasks={tasks} />
                 ) : (
                   tasks.map((task, index) => (
                     <motion.div 
@@ -395,10 +297,10 @@ export const MeshController = () => {
                               {task.status}
                             </span>
                           </div>
-                          <p className="text-sm font-semibold text-gray-900 leading-snug">{task.description}</p>
-                          {task.dependencies.length > 0 && (
+                          <p className="text-sm font-semibold text-gray-900 leading-snug">{task.label}</p>
+                          {(task.dependsOn || []).length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-1.5">
-                              {task.dependencies.map(dep => (
+                              {(task.dependsOn || []).map(dep => (
                                 <span key={dep} className="text-[9px] bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded border border-gray-100 flex items-center gap-1">
                                   <ArrowRight className="w-2 h-2" />
                                   {dep}
@@ -437,7 +339,7 @@ export const MeshController = () => {
                   </div>
                 </div>
                 <div className="p-5 font-mono text-[11px] h-[300px] overflow-y-auto space-y-1 selection:bg-blue-500/30">
-                  {terminalLogs.split('\n').map((line, i) => (
+                  {terminalLogs.map((line: string, i: number) => (
                     <div key={i} className="text-gray-400 break-all leading-relaxed flex gap-2">
                        <span className="text-gray-600 select-none">[{i+1}]</span>
                        <span className={
@@ -448,12 +350,52 @@ export const MeshController = () => {
                        }>{line}</span>
                     </div>
                   ))}
-                  {terminalLogs === '' && (
+                  {terminalLogs.length === 0 && (
                     <div className="text-gray-600 italic">Starting telemetry stream...</div>
                   )}
                   <div className="animate-pulse inline-block w-2 h-4 bg-gray-500 ml-1" />
                 </div>
               </div>
+              
+              {activeBreakpoint && activeBreakpoint.includes('coder') && (
+                <div id="breakpoint-approval-panel" className="bg-amber-50/70 border-2 border-amber-200 rounded-2xl p-6 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300 shadow-lg">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl">
+                      <Shield className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-amber-950 font-sans uppercase tracking-widest">
+                        LangGraph Breakpoint Active
+                      </h3>
+                      <p className="text-xs text-amber-900 mt-1.5 leading-relaxed font-sans">
+                        Graph execution has suspended before entering the <span className="font-extrabold uppercase bg-amber-100/80 px-1 rounded text-amber-950">coder</span> state. Review task statuses before approval.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 pt-1 font-sans">
+                    <button 
+                      id="approve-coder-btn"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('resume-swarm'));
+                      }}
+                      className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Approve & Resume execution
+                    </button>
+                    <button 
+                      id="reject-coder-btn"
+                      onClick={() => {
+                        setBreakpoint(null);
+                        setLocalMessage({ text: "Execution step rejected and halted.", type: 'error' });
+                      }}
+                      className="py-2.5 px-4 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Reject Step
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
                 <div className="flex items-center justify-between">

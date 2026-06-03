@@ -51,21 +51,35 @@ export class AgentFactory {
         throw new Error(`Invalid role: ${role}`);
     }
 
-    const llm = new ChatOpenAI({
-      openAIApiKey: openRouterKey,
-      configuration: {
-        baseURL: "https://openrouter.ai/api/v1",
-        defaultHeaders: {
-          "HTTP-Referer": "https://deepagent.ide",
-          "X-Title": "DeepAgent IDE",
+    const isGeminiKey = openRouterKey.startsWith("AIzaSy") || !openRouterKey.startsWith("sk-");
+    let llm;
+    
+    if (isGeminiKey) {
+      llm = new ChatOpenAI({
+        openAIApiKey: openRouterKey,
+        configuration: {
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        },
+        modelName: "gemini-2.5-flash",
+        temperature,
+      });
+    } else {
+      llm = new ChatOpenAI({
+        openAIApiKey: openRouterKey,
+        configuration: {
+          baseURL: "https://openrouter.ai/api/v1",
+          defaultHeaders: {
+            "HTTP-Referer": "https://deepagent.ide",
+            "X-Title": "DeepAgent IDE",
+          }
+        },
+        modelName: modelName || config.agent.defaultModel,
+        temperature,
+        modelKwargs: {
+           "route": "fallback"
         }
-      },
-      modelName: modelName || config.agent.defaultModel,
-      temperature,
-      modelKwargs: {
-         "route": "fallback"
-      }
-    });
+      });
+    }
 
     return createReactAgent({
       llm,

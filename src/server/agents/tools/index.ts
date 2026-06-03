@@ -9,6 +9,8 @@ import path from "path";
 import { IFileSystem } from "../../services/vfs/index.js";
 import { getConfig } from "../../config/index.js";
 import { logger } from "../../utils/logger.js";
+import { applyUnifiedPatch } from "../../utils/patchApplier.js";
+import { vfsLockService } from "../../services/VfsLockService.js";
 
 const execPromise = promisify(exec);
 
@@ -170,6 +172,14 @@ export const toolRegistryMetadata = [
     tip: "Highly recommended for fast searches across the entire codebase to locate where a specific function, interface, or variable is exported."
   },
   {
+    name: "find_symbol_references",
+    canonicalName: "find_symbol_references",
+    useCases: ["finding symbol usages", "looking up references", "discovering variable/class usages", "navigating dependencies"],
+    description: "Uses the cached Tree-sitter AST registry to locate all definitions and reference usages of a specific function, class, type, or interface across the entire workspace without reading any files.",
+    schemaDescription: "Requires 'symbolName' (string).",
+    tip: "Perfect for locating all files that reference or implement a given symbol name without reading files or running full-text regex searches."
+  },
+  {
     name: "semanticSearchTool",
     canonicalName: "semanticSearchTool",
     useCases: ["embedding search", "context search", "locating code by conceptual query", "finding semantic matches"],
@@ -192,6 +202,22 @@ export const toolRegistryMetadata = [
     description: "Search for available tools by name, use cases, or tool failure ID.",
     schemaDescription: "Accepts 'query' (string), 'failureId' (string), 'includeTip' (boolean), 'requestAllRegistry' (boolean).",
     tip: "When any tool fails with a failure ID, pass that ID here immediately to get context-specific diagnostics and correct arguments."
+  },
+  {
+    name: "apply_patch",
+    canonicalName: "apply_patch",
+    useCases: ["applying a git diff", "multiple file updates", "efficient code patches", "making concurrent edits across files"],
+    description: "Apply a standard unified diff/patch content directly to codebase files.",
+    schemaDescription: "Requires 'patch' (string).",
+    tip: "Include sufficient context (lines starting with space) in your diff. It supports line number offsets automatically using a sliding window match."
+  },
+  {
+    name: "grep_ast",
+    canonicalName: "grep_ast",
+    useCases: ["targeted AST symbol searching", "locating specific functions and files", "inspecting codebase classes without downloading files"],
+    description: "Search the tree-sitter index for exact or fuzzy symbol configurations (functions, types, classes, methods).",
+    schemaDescription: "Requires 'query' (string) and optional 'kind' (string/enum).",
+    tip: "Allows the agents to perform highly targeted searches for function definitions and class references across the codebase to reduce context token bloat compared to full-file reading."
   }
 ];
 
@@ -229,25 +255,36 @@ export const createTools = (vfs: IFileSystem) => {
   const write_file = tool(
     async ({ path: filePath, content }, { configurable }) => {
       const mode = configurable?.execution_mode || 'normal';
+      const currentAgent = configurable?.current_agent || "coder";
       
-      if (mode === 'yolo') {
-        await vfs.writeFile(filePath, content);
-        return `Successfully wrote ${filePath}`;
+      const lockAcquired = vfsLockService.acquireLock(filePath, currentAgent);
+      if (!lockAcquired) {
+        const owner = vfsLockService.getLockOwner(filePath);
+        return `Blocked: File '${filePath}' is currently locked by agent '${owner}' to prevent race conditions during parallel execution. Please try again shortly.`;
       }
 
-      // Read current content for diffing
-      const originalContent = await vfs.readFile(filePath) || "";
-      
-      // Dispatch event to UI
-      await dispatchCustomEvent("proposed_change", {
-        type: 'write',
-        path: filePath,
-        originalContent,
-        proposedContent: content,
-        mode
-      });
+      try {
+        if (mode === 'yolo') {
+          await vfs.writeFile(filePath, content);
+          return `Successfully wrote ${filePath}`;
+        }
 
-      return `Proposed change to ${filePath} has been sent for user review. Waiting for approval...`;
+        // Read current content for diffing
+        const originalContent = await vfs.readFile(filePath) || "";
+        
+        // Dispatch event to UI
+        await dispatchCustomEvent("proposed_change", {
+          type: 'write',
+          path: filePath,
+          originalContent,
+          proposedContent: content,
+          mode
+        });
+
+        return `Proposed change to ${filePath} has been sent for user review. Waiting for approval...`;
+      } finally {
+        vfsLockService.releaseLock(filePath, currentAgent);
+      }
     },
     {
       name: "write_file",
@@ -309,70 +346,82 @@ export const createTools = (vfs: IFileSystem) => {
   const edit_file = tool(
     async ({ path: filePath, mode = "exact", target, replacement, chunks }, { configurable }) => {
       const execMode = configurable?.execution_mode || 'normal';
-      const content = await vfs.readFile(filePath);
-      if (content === null) {
-        const errMsg = `File ${filePath} not found.`;
-        const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
-        return `Error: ${errMsg} Failure ID: ${failureId}. Please run read_file first or list_dir to locate correct files.`;
+      const currentAgent = configurable?.current_agent || "coder";
+
+      const lockAcquired = vfsLockService.acquireLock(filePath, currentAgent);
+      if (!lockAcquired) {
+        const owner = vfsLockService.getLockOwner(filePath);
+        return `Blocked: File '${filePath}' is currently locked by agent '${owner}' to prevent race conditions during parallel execution. Please try again shortly.`;
       }
 
-      let newContent = content;
-      if (mode === "exact") {
-        if (!target) {
-          const errMsg = "Parameter 'target' is required in 'exact' mode.";
+      try {
+        const content = await vfs.readFile(filePath);
+        if (content === null) {
+          const errMsg = `File ${filePath} not found.`;
           const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
-          return `Error: ${errMsg} Failure ID: ${failureId}.`;
-        }
-        if (!content.includes(target)) {
-          const errMsg = `Target string not found in ${filePath}.`;
-          const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
-          return `Error: ${errMsg} Ensure you provide the exact substring including whitespace. Failure ID: ${failureId}. Tip or help: call tool_search with this failureId.`;
-        }
-        newContent = content.replace(target, replacement || "");
-      } else if (mode === "chunks") {
-        if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
-          const errMsg = "Parameter 'chunks' must be a non-empty array in 'chunks' mode.";
-          const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
-          return `Error: ${errMsg} Failure ID: ${failureId}.`;
+          return `Error: ${errMsg} Failure ID: ${failureId}. Please run read_file first or list_dir to locate correct files.`;
         }
 
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          if (!chunk.target) {
-            const errMsg = `Chunk index ${i} is missing 'target' substring.`;
+        let newContent = content;
+        if (mode === "exact") {
+          if (!target) {
+            const errMsg = "Parameter 'target' is required in 'exact' mode.";
             const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
             return `Error: ${errMsg} Failure ID: ${failureId}.`;
           }
-          if (!newContent.includes(chunk.target)) {
-            const errMsg = `Chunk index ${i} target string not found in ${filePath}: "${chunk.target.substring(0, 80)}"`;
+          if (!content.includes(target)) {
+            const errMsg = `Target string not found in ${filePath}.`;
             const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
-            return `Error: ${errMsg}. Ensure whitespace and lines match exactly. Failure ID: ${failureId}. Tip or help: call tool_search with this failureId.`;
+            return `Error: ${errMsg} Ensure you provide the exact substring including whitespace. Failure ID: ${failureId}. Tip or help: call tool_search with this failureId.`;
           }
-          newContent = newContent.replace(chunk.target, chunk.replacement || "");
+          newContent = content.replace(target, replacement || "");
+        } else if (mode === "chunks") {
+          if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
+            const errMsg = "Parameter 'chunks' must be a non-empty array in 'chunks' mode.";
+            const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
+            return `Error: ${errMsg} Failure ID: ${failureId}.`;
+          }
+
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            if (!chunk.target) {
+              const errMsg = `Chunk index ${i} is missing 'target' substring.`;
+              const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
+              return `Error: ${errMsg} Failure ID: ${failureId}.`;
+            }
+            if (!newContent.includes(chunk.target)) {
+              const errMsg = `Chunk index ${i} target string not found in ${filePath}: "${chunk.target.substring(0, 80)}"`;
+              const failureId = await logToolFailure("edit_file", { path: filePath, mode, target, replacement, chunks }, errMsg);
+              return `Error: ${errMsg}. Ensure whitespace and lines match exactly. Failure ID: ${failureId}. Tip or help: call tool_search with this failureId.`;
+            }
+            newContent = newContent.replace(chunk.target, chunk.replacement || "");
+          }
         }
+
+        if (execMode === 'yolo') {
+          await vfs.writeFile(filePath, newContent);
+          return `Successfully edited ${filePath}`;
+        }
+
+        await dispatchCustomEvent("proposed_change", {
+          type: 'edit',
+          path: filePath,
+          originalContent: content,
+          proposedContent: newContent,
+          mode,
+          chunks: mode === 'chunks' && chunks ? chunks.map((c, i) => ({
+            id: `chunk-${i}`,
+            target: c.target,
+            replacement: c.replacement,
+            description: c.description,
+            status: 'pending'
+          })) : undefined
+        });
+
+        return `Proposed edit to ${filePath} has been sent for user review. Waiting for approval...`;
+      } finally {
+        vfsLockService.releaseLock(filePath, currentAgent);
       }
-
-      if (execMode === 'yolo') {
-        await vfs.writeFile(filePath, newContent);
-        return `Successfully edited ${filePath}`;
-      }
-
-      await dispatchCustomEvent("proposed_change", {
-        type: 'edit',
-        path: filePath,
-        originalContent: content,
-        proposedContent: newContent,
-        mode,
-        chunks: mode === 'chunks' ? chunks.map((c, i) => ({
-          id: `chunk-${i}`,
-          target: c.target,
-          replacement: c.replacement,
-          description: c.description,
-          status: 'pending'
-        })) : undefined
-      });
-
-      return `Proposed edit to ${filePath} has been sent for user review. Waiting for approval...`;
     },
     {
       name: "edit_file",
@@ -508,51 +557,7 @@ export const createTools = (vfs: IFileSystem) => {
         return `File ${filePath} not found.`;
       }
       try {
-        const sourceFile = ts.createSourceFile(
-          filePath,
-          code,
-          ts.ScriptTarget.Latest,
-          true
-        );
-      
-        const symbols: string[] = [];
-      
-        function visit(node: ts.Node) {
-          if (ts.isFunctionDeclaration(node) && node.name) {
-            symbols.push(`Function: ${node.name.text}`);
-          } else if (ts.isClassDeclaration(node) && node.name) {
-            symbols.push(`Class: ${node.name.text}`);
-          } else if (ts.isInterfaceDeclaration(node)) {
-            symbols.push(`Interface: ${node.name.text}`);
-          } else if (ts.isTypeAliasDeclaration(node)) {
-            symbols.push(`Type: ${node.name.text}`);
-          } else if (ts.isVariableStatement(node)) {
-              const isExported = node.modifiers?.some((m: any) => m.kind === ts.SyntaxKind.ExportKeyword);
-              if (isExported) {
-                   node.declarationList.declarations.forEach((d: any) => {
-                       if (ts.isIdentifier(d.name)) {
-                           symbols.push(`Exported Variable: ${d.name.text}`);
-                       }
-                   });
-              }
-          } else if (ts.isImportDeclaration(node)) {
-              const moduleSpecifier = (node.moduleSpecifier as any).text;
-              let importClause = "";
-              if (node.importClause) {
-                  if (node.importClause.name) importClause += node.importClause.name.text + ", ";
-                  if (node.importClause.namedBindings) {
-                      importClause += "{ ... }";
-                  }
-              }
-              symbols.push(`Import: ${importClause} from '${moduleSpecifier}'`);
-          }
-          ts.forEachChild(node, visit);
-        }
-      
-        visit(sourceFile);
-        
-        if (symbols.length === 0) return "No significant structural symbols found (or file is simple).";
-        return `Semantic Map for ${filePath}:\n` + symbols.map(s => `- ${s}`).join('\n');
+        return semanticMapService.getFormattedMap(filePath, code);
       } catch (e: any) {
         return `Error parsing AST: ${e.message}`;
       }
@@ -587,6 +592,141 @@ export const createTools = (vfs: IFileSystem) => {
       description: "Query real-time symbol registry location data (exported functions, classes, interfaces, or variables) without having to read full files. Highly recommended over reading massive files.",
       schema: z.object({
         query: z.string().describe("Case-insensitive keyword to look up (e.g., 'getSuperOS', 'persistenceService')").optional()
+      })
+    }
+  );
+
+  const find_symbol_references = tool(
+    async ({ symbolName }) => {
+      try {
+        if (!symbolName || symbolName.trim() === "") {
+          return "Please specify a non-empty 'symbolName' to find references for.";
+        }
+        const allSymbols = semanticMapService.getMap();
+        const usages: any[] = [];
+        const lowerName = symbolName.toLowerCase();
+
+        for (const [filePath, symbols] of Object.entries(allSymbols)) {
+          for (const s of symbols) {
+            if (s.name.toLowerCase() === lowerName) {
+              usages.push({
+                filePath,
+                line: s.line,
+                kind: s.kind,
+                name: s.name
+              });
+            }
+          }
+        }
+
+        if (usages.length === 0) {
+          return `Zero occurrences found for symbol '${symbolName}' across the workspace Tree-sitter AST registry.`;
+        }
+
+        const definitions = usages.filter(u => u.kind !== "reference");
+        const references = usages.filter(u => u.kind === "reference");
+
+        let response = `Found ${usages.length} occurrence(s) of '${symbolName}' in the AST registry:\n\n`;
+        if (definitions.length > 0) {
+          response += `### Definitions (${definitions.length}):\n`;
+          definitions.forEach(d => {
+            response += `- **${d.kind}** defined at \`${d.filePath}:${d.line}\`\n`;
+          });
+          response += `\n`;
+        }
+        if (references.length > 0) {
+          response += `### Reference Usages (${references.length}):\n`;
+          references.forEach(r => {
+            response += `- Referenced at \`${r.filePath}:${r.line}\`\n`;
+          });
+        } else {
+          response += `Zero reference usages found in AST registry (it may take a few seconds to update after edits).`;
+        }
+
+        return response;
+      } catch (err: any) {
+        return `Failed to find symbol references: ${err.message}`;
+      }
+    },
+    {
+      name: "find_symbol_references",
+      description: "Uses the cached Tree-sitter AST registry to locate all definitions and reference usages of a specific function, class, type, or interface across the entire workspace without reading any files.",
+      schema: z.object({
+        symbolName: z.string().describe("The exact name of the function, class, type, or interface to find references of.")
+      })
+    }
+  );
+
+  const grep_ast = tool(
+    async ({ query, kind }) => {
+      try {
+        if (!query || query.trim() === "") {
+          return "Please specify a non-empty query term or symbol name.";
+        }
+        const results = semanticMapService.query(query);
+        const filtered = kind
+          ? results.filter(r => r.kind.toLowerCase() === kind.toLowerCase())
+          : results;
+
+        if (filtered.length === 0) {
+          return `No symbols found matching query "${query}"${kind ? ` of kind "${kind}"` : ""}.`;
+        }
+
+        const grouped: Record<string, typeof filtered> = {};
+        for (const sym of filtered) {
+          if (!grouped[sym.filePath]) {
+            grouped[sym.filePath] = [];
+          }
+          grouped[sym.filePath].push(sym);
+        }
+
+        let output = `AST Grep Results for "${query}"${kind ? ` (filter: ${kind})` : ""}:\n\n`;
+        for (const [filePath, symbols] of Object.entries(grouped)) {
+          output += `File: ${filePath}\n`;
+          for (const s of symbols) {
+            output += `  - Line ${s.line}${s.endLine ? `-${s.endLine}` : ""}: [${s.kind}] ${s.name}\n`;
+            
+            // Extract code snippet for defined symbols
+            let snippet = "";
+            try {
+              const absolutePath = path.join(process.cwd(), s.filePath);
+              const content = await fs.readFile(absolutePath, "utf8");
+              const fileLines = content.split("\n");
+              const startIdx = s.line - 1;
+              const endIdx = s.endLine ? s.endLine - 1 : startIdx;
+              
+              if (startIdx >= 0 && startIdx < fileLines.length) {
+                const snippetLines = fileLines.slice(startIdx, endIdx + 1);
+                if (snippetLines.length > 50) {
+                  const head = snippetLines.slice(0, 35);
+                  const tail = snippetLines.slice(-15);
+                  snippet = head.join("\n") + "\n\n      // ... [truncated for brevity, total lines: " + snippetLines.length + "] ...\n\n" + tail.join("\n");
+                } else {
+                  snippet = snippetLines.join("\n");
+                }
+              }
+            } catch (readErr: any) {
+              // fallback if reading fails, silence error
+            }
+
+            if (snippet) {
+              output += `    Code:\n\`\`\`typescript\n${snippet}\n\`\`\`\n`;
+            }
+          }
+          output += `\n`;
+        }
+
+        return output.trim();
+      } catch (err: any) {
+        return `Failed to execute AST grep: ${err.message}`;
+      }
+    },
+    {
+      name: "grep_ast",
+      description: "Search for specific symbol declarations or references (such as function, class, method, type, or interface) across the workspace using the AST parser without reading entire files.",
+      schema: z.object({
+        query: z.string().describe("The name or partial name of the symbol to query."),
+        kind: z.enum(["function", "class", "method", "interface", "type", "variable", "reference"]).optional().describe("Optional filter by specific symbol kind.")
       })
     }
   );
@@ -693,6 +833,56 @@ export const createTools = (vfs: IFileSystem) => {
     }
   );
 
+  const apply_patch = tool(
+    async ({ patch }, { configurable }) => {
+      const mode = configurable?.execution_mode || 'normal';
+      try {
+        if (mode === 'yolo') {
+          const result = await applyUnifiedPatch(vfs, patch, false);
+          if (result.success) {
+            return `Successfully applied patch to the codebase:\n` + result.results.map(r => `- ${r.filePath}: Applied`).join('\n');
+          } else {
+            const failures = result.results.filter(r => !r.success);
+            const errorsStr = failures.map(f => `- ${f.filePath}: ${f.error}`).join('\n');
+            const failureId = await logToolFailure("apply_patch", { patch, mode }, errorsStr);
+            return `Error applying patch (Failure ID: ${failureId}):\n${errorsStr}\n\nTip: You can use the exact chunks/edit_file tool or provide more surrounding context context in your patch diff.`;
+          }
+        } else {
+          // Normal mode: do a dry run and propose changes
+          const dryRunResult = await applyUnifiedPatch(vfs, patch, true);
+          if (!dryRunResult.success) {
+            const failures = dryRunResult.results.filter(r => !r.success);
+            const errorsStr = failures.map(f => `- ${f.filePath}: ${f.error}`).join('\n');
+            const failureId = await logToolFailure("apply_patch", { patch, mode }, errorsStr);
+            return `Error applying patch (Failure ID: ${failureId}):\n${errorsStr}\n\nTip: You can use the exact chunks/edit_file tool or provide more surrounding context context in your patch diff.`;
+          }
+          
+          for (const res of dryRunResult.results) {
+            const originalContent = (await vfs.readFile(res.filePath)) || "";
+            await dispatchCustomEvent("proposed_change", {
+              type: 'edit',
+              path: res.filePath,
+              originalContent,
+              proposedContent: res.newContent,
+              mode: 'exact'
+            });
+          }
+          return `Proposed patch to ${dryRunResult.results.length} files has been sent for user review.`;
+        }
+      } catch (err: any) {
+        const failureId = await logToolFailure("apply_patch", { patch }, err.message);
+        return `Failed to apply patch due to internal parser error (Failure ID: ${failureId}): ${err.message}`;
+      }
+    },
+    {
+      name: "apply_patch",
+      description: "Apply a unified git-diff/patch content to files in the codebase. Highly efficient for making precise, multiple-file updates at once without sending full file reads/writes.",
+      schema: z.object({
+        patch: z.string().describe("The unified diff/patch content string (e.g., standard Git diff output layout with '--- a/path' and '+++ b/path', followed by '@@ ... @@' chunks).")
+      })
+    }
+  );
+
   return [
     write_file, 
     delete_file, 
@@ -704,6 +894,9 @@ export const createTools = (vfs: IFileSystem) => {
     schedule_task,
     semanticSearchTool,
     index,
-    tool_search
+    find_symbol_references,
+    grep_ast,
+    tool_search,
+    apply_patch
   ];
 };

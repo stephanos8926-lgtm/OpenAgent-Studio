@@ -16,11 +16,19 @@ export class HostVFS implements IFileSystem {
     this.basePath = basePath;
   }
 
+  private async getSecurePath(filePath: string): Promise<string> {
+    const path = await import('path');
+    const resolvedPath = path.resolve(this.basePath, filePath);
+    if (!resolvedPath.startsWith(path.resolve(this.basePath))) {
+      throw new Error(`Access denied: path traversal detected for ${filePath}`);
+    }
+    return resolvedPath;
+  }
+
   async readFile(filePath: string): Promise<string | null> {
     try {
       const fs = await import('fs/promises');
-      const path = await import('path');
-      const fullPath = path.join(this.basePath, filePath);
+      const fullPath = await this.getSecurePath(filePath);
       return await fs.readFile(fullPath, 'utf8');
     } catch {
       return null;
@@ -30,7 +38,7 @@ export class HostVFS implements IFileSystem {
   async writeFile(filePath: string, content: string): Promise<void> {
     const fs = await import('fs/promises');
     const path = await import('path');
-    const fullPath = path.join(this.basePath, filePath);
+    const fullPath = await this.getSecurePath(filePath);
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, content, 'utf8');
   }
@@ -38,8 +46,7 @@ export class HostVFS implements IFileSystem {
   async deleteFile(filePath: string): Promise<boolean> {
     try {
       const fs = await import('fs/promises');
-      const path = await import('path');
-      const fullPath = path.join(this.basePath, filePath);
+      const fullPath = await this.getSecurePath(filePath);
       await fs.rm(fullPath, { force: true });
       return true;
     } catch {

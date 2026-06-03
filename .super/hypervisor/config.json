@@ -1,9 +1,0 @@
-{
-  "virtualizer": "SuperOS Hypervisor v1.0.0",
-  "isolation_level": "Chroot_VFS_Kernel_Namespace",
-  "tracing_enabled": true,
-  "telemetry_tick_rate_ms": 5000,
-  "max_memory_alloc_kb": 131072,
-  "enable_wal_caching": true,
-  "debug_port_mapping": "simulated_debug_3000"
-}

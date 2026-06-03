@@ -20,7 +20,7 @@ const DEFAULT_CONFIG: AppConfig = {
     tempDirPrefix: 'agent-workspace-',
     allowedCommands: ['npm', 'node', 'ls', 'grep', 'mkdir', 'cat', 'echo', 'pwd', 'npx', 'tsc'],
     executionTimeoutMs: 30000,
-    defaultModel: 'google/gemini-2.0-flash-lite-preview-02-05:free',
+    defaultModel: 'openrouter/owl-alpha',
     coderTemperature: 0.2,
     plannerTemperature: 0.5
   },

@@ -2,6 +2,7 @@ import cron, { ScheduledTask as CronTask } from "node-cron";
 import { logger } from "../utils/logger.js";
 import { PlatformAgent } from "../agents/PlatformAgent.js";
 import { getConfig } from "../config/index.js";
+import { telemetryService } from "./TelemetryService.js";
 
 export interface ScheduledTask {
   id: string;
@@ -46,6 +47,17 @@ class SchedulerService {
         "Platform Architect Maintenance"
       );
     }
+
+    // Telemetry Logs Daily Pruning Schedule: runs every night at midnight (0 0 * * *)
+    this.registerJob(
+      "telemetry-cleanup",
+      "0 0 * * *",
+      async () => {
+        logger.info("[Scheduler] Starting Telemetry Cleanup task...");
+        telemetryService.pruneStaleMetrics(7);
+      },
+      "Telemetry Cleanup"
+    );
 
     logger.info("[Scheduler] SchedulerService initialized.");
   }

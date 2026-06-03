@@ -1,0 +1,699 @@
+{
+  "server.ts": [
+    {
+      "name": "startServer",
+      "kind": "function",
+      "line": 19,
+      "filePath": "server.ts"
+    }
+  ],
+  "src/App.tsx": [
+    {
+      "name": "App",
+      "kind": "function",
+      "line": 10,
+      "filePath": "src/App.tsx"
+    }
+  ],
+  "src/main.tsx": [],
+  "src/components/Chat.tsx": [
+    {
+      "name": "Chat",
+      "kind": "function",
+      "line": 6,
+      "filePath": "src/components/Chat.tsx"
+    }
+  ],
+  "src/components/MeshController.tsx": [
+    {
+      "name": "MeshController",
+      "kind": "variable",
+      "line": 22,
+      "filePath": "src/components/MeshController.tsx"
+    }
+  ],
+  "src/components/Settings.tsx": [
+    {
+      "name": "Settings",
+      "kind": "function",
+      "line": 5,
+      "filePath": "src/components/Settings.tsx"
+    }
+  ],
+  "src/components/TaskDAGD3.tsx": [
+    {
+      "name": "TaskDAGD3Props",
+      "kind": "interface",
+      "line": 15,
+      "filePath": "src/components/TaskDAGD3.tsx"
+    },
+    {
+      "name": "D3Node",
+      "kind": "interface",
+      "line": 19,
+      "filePath": "src/components/TaskDAGD3.tsx"
+    },
+    {
+      "name": "D3Link",
+      "kind": "interface",
+      "line": 26,
+      "filePath": "src/components/TaskDAGD3.tsx"
+    },
+    {
+      "name": "TaskDAGD3",
+      "kind": "variable",
+      "line": 31,
+      "filePath": "src/components/TaskDAGD3.tsx"
+    }
+  ],
+  "src/components/Workspace.tsx": [
+    {
+      "name": "Workspace",
+      "kind": "function",
+      "line": 66,
+      "filePath": "src/components/Workspace.tsx"
+    }
+  ],
+  "src/lib/store.ts": [
+    {
+      "name": "Message",
+      "kind": "interface",
+      "line": 4,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "Settings",
+      "kind": "interface",
+      "line": 9,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "Task",
+      "kind": "interface",
+      "line": 14,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "SwarmState",
+      "kind": "interface",
+      "line": 21,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "ProposedChunk",
+      "kind": "interface",
+      "line": 29,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "ProposedChange",
+      "kind": "interface",
+      "line": 37,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "ProposedCommand",
+      "kind": "interface",
+      "line": 47,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "ActiveBreakpoint",
+      "kind": "interface",
+      "line": 53,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "AppState",
+      "kind": "interface",
+      "line": 58,
+      "filePath": "src/lib/store.ts"
+    },
+    {
+      "name": "useAppStore",
+      "kind": "variable",
+      "line": 105,
+      "filePath": "src/lib/store.ts"
+    }
+  ],
+  "src/lib/agents/swarm.ts": [
+    {
+      "name": "SwarmState",
+      "kind": "variable",
+      "line": 8,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "createSwarmPipeline",
+      "kind": "function",
+      "line": 39,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "orchestrator",
+      "kind": "function",
+      "line": 82,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "taskDecomposer",
+      "kind": "function",
+      "line": 93,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "workerMesh",
+      "kind": "function",
+      "line": 98,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "healthAndSecurityMonitor",
+      "kind": "function",
+      "line": 105,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "orchestratorRouter",
+      "kind": "function",
+      "line": 113,
+      "filePath": "src/lib/agents/swarm.ts"
+    },
+    {
+      "name": "workerRouter",
+      "kind": "function",
+      "line": 123,
+      "filePath": "src/lib/agents/swarm.ts"
+    }
+  ],
+  "src/server/agents/AgentFactory.ts": [
+    {
+      "name": "sharedCheckpointer",
+      "kind": "variable",
+      "line": 13,
+      "filePath": "src/server/agents/AgentFactory.ts"
+    },
+    {
+      "name": "AgentFactory",
+      "kind": "class",
+      "line": 21,
+      "filePath": "src/server/agents/AgentFactory.ts"
+    },
+    {
+      "name": "createRunner",
+      "kind": "method",
+      "line": 22,
+      "filePath": "src/server/agents/AgentFactory.ts"
+    }
+  ],
+  "src/server/agents/BaseAgent.ts": [
+    {
+      "name": "AgentManifest",
+      "kind": "interface",
+      "line": 13,
+      "filePath": "src/server/agents/BaseAgent.ts"
+    },
+    {
+      "name": "wrapWithWarden",
+      "kind": "function",
+      "line": 23,
+      "filePath": "src/server/agents/BaseAgent.ts"
+    },
+    {
+      "name": "createDeepAgent",
+      "kind": "function",
+      "line": 46,
+      "filePath": "src/server/agents/BaseAgent.ts"
+    }
+  ],
+  "src/server/agents/PlatformAgent.ts": [
+    {
+      "name": "PlatformAgent",
+      "kind": "class",
+      "line": 11,
+      "filePath": "src/server/agents/PlatformAgent.ts"
+    },
+    {
+      "name": "runHealthCheck",
+      "kind": "method",
+      "line": 26,
+      "filePath": "src/server/agents/PlatformAgent.ts"
+    },
+    {
+      "name": "summarizeTechnicalContext",
+      "kind": "method",
+      "line": 64,
+      "filePath": "src/server/agents/PlatformAgent.ts"
+    }
+  ],
+  "src/server/agents/SwarmGraph.ts": [
+    {
+      "name": "Task",
+      "kind": "interface",
+      "line": 14,
+      "filePath": "src/server/agents/SwarmGraph.ts"
+    },
+    {
+      "name": "DeepAgentState",
+      "kind": "variable",
+      "line": 22,
+      "filePath": "src/server/agents/SwarmGraph.ts"
+    },
+    {
+      "name": "createModel",
+      "kind": "function",
+      "line": 58,
+      "filePath": "src/server/agents/SwarmGraph.ts"
+    },
+    {
+      "name": "createSwarmGraph",
+      "kind": "function",
+      "line": 77,
+      "filePath": "src/server/agents/SwarmGraph.ts"
+    }
+  ],
+  "src/server/config/index.ts": [
+    {
+      "name": "AppConfig",
+      "kind": "interface",
+      "line": 4,
+      "filePath": "src/server/config/index.ts"
+    },
+    {
+      "name": "loadConfig",
+      "kind": "variable",
+      "line": 34,
+      "filePath": "src/server/config/index.ts"
+    },
+    {
+      "name": "getConfig",
+      "kind": "variable",
+      "line": 61,
+      "filePath": "src/server/config/index.ts"
+    }
+  ],
+  "src/server/config/prompts.ts": [
+    {
+      "name": "getCoderPrompt",
+      "kind": "variable",
+      "line": 1,
+      "filePath": "src/server/config/prompts.ts"
+    },
+    {
+      "name": "getPlannerPrompt",
+      "kind": "variable",
+      "line": 20,
+      "filePath": "src/server/config/prompts.ts"
+    },
+    {
+      "name": "getAuditorPrompt",
+      "kind": "variable",
+      "line": 43,
+      "filePath": "src/server/config/prompts.ts"
+    }
+  ],
+  "src/server/middleware/error.ts": [
+    {
+      "name": "ErrorResponse",
+      "kind": "interface",
+      "line": 7,
+      "filePath": "src/server/middleware/error.ts"
+    },
+    {
+      "name": "AppError",
+      "kind": "class",
+      "line": 18,
+      "filePath": "src/server/middleware/error.ts"
+    },
+    {
+      "name": "errorHandler",
+      "kind": "variable",
+      "line": 34,
+      "filePath": "src/server/middleware/error.ts"
+    }
+  ],
+  "src/server/middleware/requestLogger.ts": [
+    {
+      "name": "requestLogger",
+      "kind": "variable",
+      "line": 10,
+      "filePath": "src/server/middleware/requestLogger.ts"
+    }
+  ],
+  "src/server/routes/api.ts": [
+    {
+      "name": "getFallbackModels",
+      "kind": "function",
+      "line": 23,
+      "filePath": "src/server/routes/api.ts"
+    }
+  ],
+  "src/server/services/CommandApprovalService.ts": [
+    {
+      "name": "CommandApprovalService",
+      "kind": "class",
+      "line": 4,
+      "filePath": "src/server/services/CommandApprovalService.ts"
+    },
+    {
+      "name": "getInstance",
+      "kind": "method",
+      "line": 10,
+      "filePath": "src/server/services/CommandApprovalService.ts"
+    },
+    {
+      "name": "registerApproval",
+      "kind": "method",
+      "line": 17,
+      "filePath": "src/server/services/CommandApprovalService.ts"
+    },
+    {
+      "name": "resolveApproval",
+      "kind": "method",
+      "line": 36,
+      "filePath": "src/server/services/CommandApprovalService.ts"
+    },
+    {
+      "name": "commandApprovalService",
+      "kind": "variable",
+      "line": 49,
+      "filePath": "src/server/services/CommandApprovalService.ts"
+    }
+  ],
+  "src/server/services/PersistenceService.ts": [
+    {
+      "name": "PersistenceService",
+      "kind": "class",
+      "line": 6,
+      "filePath": "src/server/services/PersistenceService.ts"
+    },
+    {
+      "name": "getInstance",
+      "kind": "method",
+      "line": 20,
+      "filePath": "src/server/services/PersistenceService.ts"
+    },
+    {
+      "name": "init",
+      "kind": "method",
+      "line": 31,
+      "filePath": "src/server/services/PersistenceService.ts"
+    },
+    {
+      "name": "getSaver",
+      "kind": "method",
+      "line": 45,
+      "filePath": "src/server/services/PersistenceService.ts"
+    },
+    {
+      "name": "close",
+      "kind": "method",
+      "line": 61,
+      "filePath": "src/server/services/PersistenceService.ts"
+    },
+    {
+      "name": "persistenceService",
+      "kind": "variable",
+      "line": 66,
+      "filePath": "src/server/services/PersistenceService.ts"
+    }
+  ],
+  "src/server/services/SchedulerService.ts": [
+    {
+      "name": "ScheduledTask",
+      "kind": "interface",
+      "line": 6,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "SchedulerService",
+      "kind": "class",
+      "line": 14,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "init",
+      "kind": "method",
+      "line": 23,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "registerJob",
+      "kind": "method",
+      "line": 53,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "stopJob",
+      "kind": "method",
+      "line": 80,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "getTasks",
+      "kind": "method",
+      "line": 90,
+      "filePath": "src/server/services/SchedulerService.ts"
+    },
+    {
+      "name": "scheduler",
+      "kind": "variable",
+      "line": 95,
+      "filePath": "src/server/services/SchedulerService.ts"
+    }
+  ],
+  "src/server/services/SemanticMapService.ts": [
+    {
+      "name": "CodeSymbol",
+      "kind": "interface",
+      "line": 7,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "SemanticMapService",
+      "kind": "class",
+      "line": 15,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "getInstance",
+      "kind": "method",
+      "line": 25,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "startIndexing",
+      "kind": "method",
+      "line": 32,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "scanAndIndexLocalFiles",
+      "kind": "method",
+      "line": 80,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "shouldIndex",
+      "kind": "method",
+      "line": 124,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "loadRegistry",
+      "kind": "method",
+      "line": 129,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "saveRegistry",
+      "kind": "method",
+      "line": 158,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "indexFile",
+      "kind": "method",
+      "line": 176,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "removeFileFromIndex",
+      "kind": "method",
+      "line": 240,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "createSymbol",
+      "kind": "method",
+      "line": 249,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "query",
+      "kind": "method",
+      "line": 259,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "getMap",
+      "kind": "method",
+      "line": 273,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    },
+    {
+      "name": "semanticMapService",
+      "kind": "variable",
+      "line": 278,
+      "filePath": "src/server/services/SemanticMapService.ts"
+    }
+  ],
+  "src/server/utils/logger.ts": [
+    {
+      "name": "Logger",
+      "kind": "class",
+      "line": 8,
+      "filePath": "src/server/utils/logger.ts"
+    },
+    {
+      "name": "getInstance",
+      "kind": "method",
+      "line": 19,
+      "filePath": "src/server/utils/logger.ts"
+    },
+    {
+      "name": "logger",
+      "kind": "variable",
+      "line": 37,
+      "filePath": "src/server/utils/logger.ts"
+    }
+  ],
+  "src/server/agents/tools/SemanticSearchTool.ts": [
+    {
+      "name": "semanticSearchTool",
+      "kind": "variable",
+      "line": 9,
+      "filePath": "src/server/agents/tools/SemanticSearchTool.ts"
+    }
+  ],
+  "src/server/agents/tools/index.ts": [
+    {
+      "name": "logToolFailure",
+      "kind": "variable",
+      "line": 77,
+      "filePath": "src/server/agents/tools/index.ts"
+    },
+    {
+      "name": "toolRegistryMetadata",
+      "kind": "variable",
+      "line": 107,
+      "filePath": "src/server/agents/tools/index.ts"
+    },
+    {
+      "name": "createTools",
+      "kind": "variable",
+      "line": 198,
+      "filePath": "src/server/agents/tools/index.ts"
+    }
+  ],
+  "src/server/agents/tools/semantic.ts": [
+    {
+      "name": "SemanticSymbol",
+      "kind": "interface",
+      "line": 3,
+      "filePath": "src/server/agents/tools/semantic.ts"
+    },
+    {
+      "name": "getSemanticMap",
+      "kind": "function",
+      "line": 10,
+      "filePath": "src/server/agents/tools/semantic.ts"
+    }
+  ],
+  "src/server/services/vfs/index.ts": [
+    {
+      "name": "IFileSystem",
+      "kind": "interface",
+      "line": 1,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "HostVFS",
+      "kind": "class",
+      "line": 11,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "readFile",
+      "kind": "method",
+      "line": 19,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "writeFile",
+      "kind": "method",
+      "line": 30,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "deleteFile",
+      "kind": "method",
+      "line": 38,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "listFiles",
+      "kind": "method",
+      "line": 50,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "walk",
+      "kind": "function",
+      "line": 55,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "getFiles",
+      "kind": "method",
+      "line": 79,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "InMemoryVFS",
+      "kind": "class",
+      "line": 90,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "readFile",
+      "kind": "method",
+      "line": 98,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "writeFile",
+      "kind": "method",
+      "line": 102,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "deleteFile",
+      "kind": "method",
+      "line": 106,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "listFiles",
+      "kind": "method",
+      "line": 114,
+      "filePath": "src/server/services/vfs/index.ts"
+    },
+    {
+      "name": "getFiles",
+      "kind": "method",
+      "line": 118,
+      "filePath": "src/server/services/vfs/index.ts"
+    }
+  ]
+}

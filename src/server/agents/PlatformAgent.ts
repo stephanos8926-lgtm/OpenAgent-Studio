@@ -13,14 +13,27 @@ export class PlatformAgent {
   
   constructor(openRouterKey: string) {
     const config = getConfig();
-    this.model = new ChatOpenAI({
-      openAIApiKey: openRouterKey,
-      configuration: {
-        baseURL: "https://openrouter.ai/api/v1",
-      },
-      modelName: "google/gemini-2.0-flash-lite-preview-02-05:free",
-      temperature: 0,
-    });
+    const isGeminiKey = openRouterKey.startsWith("AIzaSy") || !openRouterKey.startsWith("sk-");
+    
+    if (isGeminiKey) {
+      this.model = new ChatOpenAI({
+        openAIApiKey: openRouterKey,
+        configuration: {
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        },
+        modelName: "gemini-2.5-flash",
+        temperature: 0,
+      });
+    } else {
+      this.model = new ChatOpenAI({
+        openAIApiKey: openRouterKey,
+        configuration: {
+          baseURL: "https://openrouter.ai/api/v1",
+        },
+        modelName: "google/gemini-2.0-flash-lite-preview-02-05:free",
+        temperature: 0,
+      });
+    }
   }
 
   async runHealthCheck(systemState: any): Promise<{ repair_needed: boolean; actions: string[] }> {

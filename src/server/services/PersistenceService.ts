@@ -32,6 +32,8 @@ export class PersistenceService {
     try {
       if (!this.saver) {
         this.saver = SqliteSaver.fromConnString(this.dbPath);
+        // @ts-ignore
+        await this.saver.setup();
         logger.info({ dbPath: this.dbPath }, "PersistenceService initialized with SQLite");
       } else {
         logger.info({ dbPath: this.dbPath }, "PersistenceService already initialized");

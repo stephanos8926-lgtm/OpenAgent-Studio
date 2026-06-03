@@ -1,6 +1,12 @@
 {
-  "name": "DeepAgent IDE",
-  "description": "An AI studio build mode clone allowing you to write, build, and run apps completely from your browser powered by LangGraph, open-source models natively supporting free tool-calling, and custom UI components.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "LangGraph Swarm IDE",
+  "description": "An interactive IDE workspace featuring real-time LangGraph agent routing telemetry, runtime terminal, customizable error logs, and comprehensive IDE vs User-App error boundary monitoring.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

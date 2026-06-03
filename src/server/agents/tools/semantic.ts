@@ -16,8 +16,11 @@ export function getSemanticMap(code: string, fileName: string): SemanticSymbol[]
   );
 
   const symbols: SemanticSymbol[] = [];
+  const stack: ts.Node[] = [sourceFile];
 
-  function visit(node: ts.Node) {
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+
     if (ts.isFunctionDeclaration(node) && node.name) {
       symbols.push({
         name: node.name.text,
@@ -55,9 +58,14 @@ export function getSemanticMap(code: string, fileName: string): SemanticSymbol[]
         }
     }
 
-    ts.forEachChild(node, visit);
+    const children: ts.Node[] = [];
+    ts.forEachChild(node, (child) => {
+      children.push(child);
+    });
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push(children[i]);
+    }
   }
 
-  visit(sourceFile);
   return symbols;
 }

@@ -16,8 +16,8 @@ Build a web-based IDE powered by advanced AI coding assistants. DeepAgent levera
 5. [x] Code execution on HostVFS for local deployment mode
 6. [x] Configuration loading (`deepagent.config.json` and env vars)
 7. [x] Proper prompt configurations and roles (coder, planner, auditor)
-8. [ ] Advanced Terminal UI with real-time feedback
-9. [ ] Multi-agent collaboration interface (Plan, Code, Audit)
+8. [x] Advanced Bidirectional Terminal UI with keyboard interrupts (stty sane base)
+9. [x] Swarm Collaboration & Visual Radar Scan (planner, coder, auditor, reviewer)
 10. [ ] VFS persistence (IndexedDB for web, real FS for local)
 
 ## Open Questions

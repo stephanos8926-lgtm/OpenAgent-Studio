@@ -3,7 +3,8 @@
 import React from 'react';
 import { useAppStore } from '../lib/store';
 import { WorkspaceFile } from '../types';
-import { Folder, FolderOpen, FileCode, Terminal, HelpCircle } from 'lucide-react';
+import { Folder, ChevronRight, FileCode, FileJson, FileText, Globe } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface FileNodeProps {
   node: WorkspaceFile;
@@ -16,18 +17,19 @@ const FileNode: React.FC<FileNodeProps> = ({ node, level }) => {
 
   const getIcon = () => {
     if (node.isDirectory) {
-      return isOpen ? (
-        <FolderOpen className="w-4 h-4 text-amber-400 fill-amber-400/10 shrink-0" />
-      ) : (
-        <Folder className="w-4 h-4 text-amber-500 fill-amber-500/10 shrink-0" />
+      return (
+        <Folder className={`w-3.5 h-3.5 shrink-0 ${isOpen ? 'text-slate-400' : 'text-slate-600'}`} />
       );
     }
     
     // File type matching icons
     if (node.name.endsWith('.tsx') || node.name.endsWith('.ts')) {
-      return <FileCode className="w-4 h-4 text-cyan-400 shrink-0" />;
+      return <div className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mx-1" />;
     }
-    return <FileCode className="w-4 h-4 text-slate-400 shrink-0" />;
+    if (node.name.endsWith('.json')) {
+      return <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mx-1" />;
+    }
+    return <div className="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0 mx-1" />;
   };
 
   const handleClick = (e: React.MouseEvent) => {
@@ -42,27 +44,41 @@ const FileNode: React.FC<FileNodeProps> = ({ node, level }) => {
   const isSelected = activeFile && activeFile.path === node.path;
 
   return (
-    <div className="select-none font-mono">
+    <div className="select-none overflow-hidden">
       <div
         onClick={handleClick}
-        style={{ paddingLeft: `${level * 12 + 8}px` }}
-        className={`flex items-center gap-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${
+        style={{ paddingLeft: `${level * 16 + 12}px` }}
+        className={`group flex items-center gap-2 py-1.5 rounded-md text-[11px] cursor-pointer transition-all duration-200 ${
           isSelected 
-            ? 'bg-blue-600/20 text-blue-300 font-bold border-l-2 border-blue-500' 
-            : 'text-slate-400 hover:bg-slate-850 hover:text-slate-200'
+            ? 'bg-indigo-600/10 text-slate-100 font-bold border border-indigo-500/10' 
+            : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
         }`}
       >
+        {node.isDirectory && (
+          <ChevronRight 
+            size={12} 
+            className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''} text-slate-600`} 
+          />
+        )}
+        {!node.isDirectory && <div className="w-3" />}
         {getIcon()}
-        <span className="truncate leading-none">{node.name}</span>
+        <span className="truncate flex-1 tracking-tight">{node.name}</span>
       </div>
 
-      {node.isDirectory && isOpen && node.children && (
-        <div className="space-y-0.5 mt-0.5">
-          {node.children.map(child => (
-            <FileNode key={child.path} node={child} level={level + 1} />
-          ))}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {node.isDirectory && isOpen && node.children && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="space-y-0.5 mt-0.5 overflow-hidden"
+          >
+            {node.children.map(child => (
+              <FileNode key={child.path} node={child} level={level + 1} />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -71,14 +87,11 @@ export const FileTree: React.FC = () => {
   const { files } = useAppStore();
 
   return (
-    <div id="file-tree-container" className="space-y-2 h-full flex flex-col font-sans">
-      <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider border-b border-slate-800 pb-2">
-        <span>Files Explorer</span>
-        <span className="text-[9px] bg-slate-950 px-1 py-0.5 rounded text-blue-400 border border-slate-850">
-          VFS MOUNTED
-        </span>
+    <div id="file-tree-container" className="space-y-1 h-full flex flex-col font-sans">
+      <div className="flex items-center justify-between px-2 py-2 mb-2">
+         <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Active Workspace</span>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-1">
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
         {files.map(file => (
           <FileNode key={file.path} node={file} level={0} />
         ))}
@@ -86,3 +99,4 @@ export const FileTree: React.FC = () => {
     </div>
   );
 };
+

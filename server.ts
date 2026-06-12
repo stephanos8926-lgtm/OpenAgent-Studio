@@ -1,5 +1,9 @@
 // File: server.ts
 
+import './src/server/observability/Telemetry.js';
+import { initializeTelemetry } from './src/server/observability/Telemetry.js';
+import { log } from './src/server/observability/Logger.js';
+
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -11,15 +15,21 @@ import fs from 'fs';
 import { semanticMapService } from './src/server/services/SemanticMapService';
 import { persistenceService } from './src/server/services/PersistenceService';
 import { containerService } from './src/server/services/container/index';
+import { handleFailedBuild } from './src/server/utils/buildDiagnostics';
 import apiRouter from './src/server/routes/api';
 
 async function startServer() {
+  // Initialize observability early
+  await initializeTelemetry();
+
+  log.rawFileWriter('SystemBootstrap', '\n==================================================\n🚀 LANGGRAPH SWARM IDE PLATFORM BOOTSTRAP STARTING\n==================================================\n');
+
   const app = express();
   const PORT = 3000;
 
   // Initialize persistence db
   await persistenceService.init().catch(err => {
-    console.error('Failed to init persistent db', err);
+    log.error('Persistence', 'Failed to init persistent db', { err });
   });
 
   const httpServer = createHttpServer(app);
@@ -29,12 +39,12 @@ async function startServer() {
 
   // Start background daemon for Semantic Map Registry (O(1) lookups)
   semanticMapService.startIndexing(process.cwd()).catch(err => {
-    console.error('Failed to start Semantic Map Daemon', err);
+    log.error('SemanticMap', 'Failed to start Semantic Map Daemon', { err });
   });
 
   // Socket.IO logic for bidirectional PTY Terminal
   io.on('connection', async (socket) => {
-    console.log(`[Terminal PTY] Client connected: ${socket.id}`);
+    log.info('SocketIO', `Client connected: ${socket.id}`);
     
     // Spawn an interactive bash shell via script trick to emulate a TTY
     const isWin = os.platform() === 'win32';
@@ -60,7 +70,7 @@ async function startServer() {
       });
 
       socket.on('disconnect', () => {
-        console.log(`[Terminal PTY] Client disconnected: ${socket.id}`);
+        log.info('SocketIO', `Client disconnected: ${socket.id}`);
         containerProcess.kill();
       });
     } catch (err: any) {
@@ -68,58 +78,85 @@ async function startServer() {
     }
 
     // Interactive Async Workspace Compile Triggers
-    socket.on('start_compile', async (data: { simulateBuildFailure?: boolean }) => {
+    socket.on('start_compile', async (data: { simulateBuildFailure?: boolean; openRouterKey?: string; modelName?: string }) => {
       const simulateBuildFailure = data?.simulateBuildFailure ?? false;
-      console.log(`[Socket.IO] Starting async compile task. SimulateFailure: ${simulateBuildFailure}`);
+      log.info('Compiler', 'Starting async compile task', { simulateBuildFailure });
+
+      const buildLogPath = path.join(process.cwd(), '.data', 'workspace-build.log');
+      try {
+        if (!fs.existsSync(path.dirname(buildLogPath))) {
+          fs.mkdirSync(path.dirname(buildLogPath), { recursive: true });
+        }
+        fs.writeFileSync(buildLogPath, `--- Build started at ${new Date().toISOString()} ---\n`, 'utf-8');
+      } catch (err) {
+        // fail-safe log
+      }
 
       try {
-        socket.emit('compile_progress', { percent: 10, message: 'Requesting secure compile worker container...', state: 'running' });
-        socket.emit('compile_log', '\r\nnpm run build: initiating static workspace types-audit...\r\n');
-        await new Promise(r => setTimeout(r, 650));
-
-        socket.emit('compile_progress', { percent: 35, message: 'Scanning file tree and updating Semantic abstract symbols...' });
-        socket.emit('compile_log', 'Analyzing project exports and module tree configurations...\r\n');
-        await new Promise(r => setTimeout(r, 650));
-
-        socket.emit('compile_progress', { percent: 60, message: 'Evaluating static type assertions on source codes...' });
-        socket.emit('compile_log', 'Running TypeScript types-safety syntax check (tsc --noEmit)...\r\n');
-        await new Promise(r => setTimeout(r, 750));
-
+        socket.emit('compile_progress', { percent: 10, message: 'Warming up secure compile worker container...', state: 'running' });
+        
         if (simulateBuildFailure) {
           socket.emit('compile_progress', { percent: 70, message: 'Assertion failed: Compilation syntax error in Workspace.tsx', state: 'failed' });
-          socket.emit('compile_log', '\r\nERROR: [vite:tsc] File `src/components/Workspace.tsx` failed compilation syntax audit.\r\n');
-          socket.emit('compile_log', 'ERROR: TS2339: Property "injectEvent" does not exist on type "SystemMetrics".\r\n');
-          socket.emit('compile_log', 'Check Workspace.tsx line 33, column 10: "const { metrics, injectEvent } = useAppStore();"\r\n');
+          const err1 = '\r\nERROR: [vite:tsc] File `src/components/Workspace.tsx` failed compilation syntax audit.\r\n';
+          socket.emit('compile_log', err1);
           
+          try {
+            fs.appendFileSync(buildLogPath, err1, 'utf-8');
+          } catch (writeErr) {
+            // ignore
+          }
+
           socket.emit('compile_metric_update', {
             buildFailureCount: Math.floor(Math.random() * 5) + 1
           });
 
-          socket.emit('compile_task_update', [
-            { id: 't3', status: 'failed' }
-          ]);
+          await handleFailedBuild(err1, socket, data);
           return;
         }
 
-        socket.emit('compile_progress', { percent: 80, message: 'Packing and optimizing static code production chunks...' });
-        socket.emit('compile_log', 'Injecting assets... dist/assets/index-9411ad.js (312kB) emitted cleanly.\r\n');
-        await new Promise(r => setTimeout(r, 650));
-
-        socket.emit('compile_progress', { percent: 95, message: 'Validating compliance safety metrics and telemetry configurations...' });
-        socket.emit('compile_log', 'Vite bundle production build completed successfully.\r\n');
-        await new Promise(r => setTimeout(r, 550));
-
-        socket.emit('compile_progress', { percent: 100, message: 'Workspace compilation completed cleanly!', state: 'success' });
-        socket.emit('compile_log', 'Sandbox hot-reload active. Client viewport ready.\r\n');
+        socket.emit('compile_progress', { percent: 50, message: 'Running build process...' });
         
-        socket.emit('compile_metric_update', {
-          buildSuccessCount: Math.floor(Math.random() * 8) + 1
+        // Ensure path uses workspace directory
+        const workspaceDir = path.join(process.cwd(), ".workspaces", "default");
+        if (!fs.existsSync(workspaceDir)) {
+           fs.mkdirSync(workspaceDir, { recursive: true });
+        }
+        
+        let buildCommand = isWin ? 'cmd.exe' : 'sh';
+        let buildArgs = isWin ? ['/c', 'npm run build'] : ['-c', 'npm run build'];
+        
+        // Actually run a real build in the workspace container
+        const cp = await containerService.spawnProcess(buildCommand, buildArgs, {
+          cwd: workspaceDir
         });
 
-        socket.emit('compile_task_update', [
-          { id: 't3', status: 'completed' },
-          { id: 't4', status: 'in_progress' }
-        ]);
+        let buildLogBuffer = "";
+
+        cp.onData(chunk => {
+           const text = chunk.toString();
+           socket.emit('compile_log', text);
+           buildLogBuffer += text;
+
+           try {
+             fs.appendFileSync(buildLogPath, text, 'utf-8');
+           } catch (writeErr) {
+             // ignore
+           }
+        });
+
+        cp.onExit(async code => {
+           if (code === 0) {
+             socket.emit('compile_progress', { percent: 100, message: 'Workspace compilation completed cleanly!', state: 'success' });
+             socket.emit('compile_metric_update', {
+               buildSuccessCount: Math.floor(Math.random() * 8) + 1
+             });
+           } else {
+             socket.emit('compile_progress', { percent: 100, message: `Compilation failed with exit code ${code}`, state: 'failed' });
+             socket.emit('compile_metric_update', { buildFailureCount: 1 });
+
+             await handleFailedBuild(buildLogBuffer, socket, data);
+           }
+        });
 
       } catch (err: any) {
         socket.emit('compile_progress', { percent: 100, message: `Compilation crash: ${err.message}`, state: 'failed' });
@@ -129,7 +166,7 @@ async function startServer() {
 
     // Real-Time Socket-Based Hot Module Replacement (HMR) 
     socket.on('file_change', async (data: { path: string; content: string }) => {
-      console.log(`[HMR Daemon] Received socket-based file preservation request for: ${data.path}`);
+      log.info('HMR', 'Received socket-based file preservation request', { path: data.path });
       try {
         const sanitizedPath = path.normalize(data.path).replace(/^(\.\.(\/|\\))+/, '');
         const absolutePath = path.join(process.cwd(), sanitizedPath);
@@ -156,7 +193,7 @@ async function startServer() {
 
     // Interactive Async Workspace Loading Sequence on Mount
     socket.on('initial_load_check', async () => {
-      console.log(`[Socket.IO] Running initial workspace check for: ${socket.id}`);
+      log.info('Workspace', 'Running initial workspace check', { socketId: socket.id });
       try {
         socket.emit('compile_progress', { percent: 15, message: 'Warming up secure container runtime execution environment...', state: 'running' });
         await new Promise(r => setTimeout(r, 500));
@@ -182,27 +219,33 @@ async function startServer() {
 
   // Centralized full-stack telemetry logging receiver
   app.post('/api/telemetry', (req, res) => {
-    const log = req.body;
-    const timestamp = log.timestamp || new Date().toISOString();
-    const severity = log.severity || 'INFO';
-    const origin = log.origin || 'IDE_SYSTEM';
-    const moduleName = log.module || 'Default';
-    const message = log.message || '';
-    const detail = log.detail ? `\n--- DIAGNOSTIC DETAILS ---\n${log.detail}\n-------------------------` : '';
+    const payload = req.body;
+    const timestamp = payload.timestamp || new Date().toISOString();
+    const severity = payload.severity || 'INFO';
+    const origin = payload.origin || 'IDE_SYSTEM';
+    const moduleName = payload.module || 'Default';
+    const message = payload.message || '';
+    const detail = payload.detail ? `\n--- DIAGNOSTIC DETAILS ---\n${payload.detail}\n-------------------------` : '';
 
     // Print to server stdout/stderr console to establish a single telemetry pipeline
-    console.log(`\x1b[35m[TELEMETRY] [${timestamp}] [${severity}] [${origin}] (${moduleName}) ${message}\x1b[0m${detail}`);
+    log.info('ClientTelemetry', message, { origin, severity, moduleName, detail, timestamp });
     
-    res.status(200).json({ status: 'telemetry_received', id: log.id });
+    res.status(200).json({ status: 'telemetry_received', id: payload.id });
   });
 
-  // Simple service health endpoint
+  // Simple service health endpoint returning actual OS/Process telemetry
   app.get('/api/health', (req, res) => {
+    const memory = process.memoryUsage();
     res.json({ 
       status: 'healthy',
       system: 'LangGraph Swarm Vision Platform',
       cluster: 'us-east1-gcp',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      metrics: {
+        cpuUsage: os.loadavg()[0] * 10, // Mocked percentage out of load avg for simple visualization
+        memoryUsage: Math.round(memory.rss / 1024 / 1024),
+        uptime: process.uptime()
+      }
     });
   });
 
@@ -211,9 +254,9 @@ async function startServer() {
   const isProductionMode = process.env.NODE_ENV === 'production' && hasBuiltDist;
 
   if (!isProductionMode) {
-    console.log('[NODE SERVER] Initializing Express with Vite middleware (Development Fallback Mode)');
+    log.info('HttpServer', 'Initializing Express with Vite middleware (Development Fallback Mode)');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -231,7 +274,7 @@ async function startServer() {
       }
     });
   } else {
-    console.log('[NODE SERVER] Serving production static files from dist/');
+    log.info('HttpServer', 'Serving production static files from dist/');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -239,10 +282,14 @@ async function startServer() {
     });
   }
 
+  // Global Error Handler - Must be last middleware
+  const { globalErrorHandler } = await import('./src/server/middleware/GlobalErrorHandler.js');
+  app.use(globalErrorHandler);
+
   // Bind to port 3000 as mandated by container specifications using httpServer!
   httpServer.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`[SERVER CRITICAL] Port ${PORT} is currently in use! Retrying in 1.5 seconds...`);
+      log.error('HttpServer', `Port ${PORT} is currently in use! Retrying in 1.5 seconds...`);
       setTimeout(() => {
         try {
           httpServer.close();
@@ -250,13 +297,13 @@ async function startServer() {
         httpServer.listen(PORT, '0.0.0.0');
       }, 1500);
     } else {
-      console.error('[SERVER ERROR]', err);
+      log.error('HttpServer', 'Generic server error', { err });
     }
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`System server active on port ${PORT}`);
-    console.log(`Interactive API and sandbox telemetry channel mapped to http://0.0.0.0:${PORT}`);
+    log.info('HttpServer', `System server active on port ${PORT}`);
+    log.info('HttpServer', `Interactive API and sandbox telemetry channel mapped to http://0.0.0.0:${PORT}`);
   });
 }
 

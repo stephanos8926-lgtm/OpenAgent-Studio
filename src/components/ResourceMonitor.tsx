@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Cpu, HardDrive, ShieldCheck, Lock } from "lucide-react";
+import { updateTelemetryMetrics } from "../lib/telemetry";
 
 interface Metrics {
   cpu: number;
@@ -30,6 +31,7 @@ export const ResourceMonitor: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            updateTelemetryMetrics(data.cpu);
             setMetrics({
               cpu: data.cpu,
               memory: data.memory,

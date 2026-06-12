@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Search, Bot, Terminal, Shield, Eye, Lock, 
-  HelpCircle, Zap, RefreshCw, X, ShieldAlert, CheckCircle 
+  HelpCircle, Zap, RefreshCw, X, ShieldAlert, CheckCircle, Bell, Smartphone
 } from "lucide-react";
+import { useNotifications } from "../hooks/useNotifications";
+import { NotificationChannel } from "../notifications/types";
 
 interface CommandItem {
   id: string;
@@ -44,6 +46,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { push } = useNotifications();
 
   // Toggle open/close on key command Cmd+K or Ctrl+K
   useEffect(() => {
@@ -169,6 +172,36 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: <HelpCircle className="w-4 h-4 text-violet-400" />,
       action: () => {
         onRestartTour();
+        setIsOpen(false);
+      }
+    },
+    {
+      id: "test_toast",
+      category: "Developer",
+      title: "Dispatch UI Toast Notification",
+      description: "Push a transient alert onto the platform notification stack.",
+      icon: <Bell className="w-4 h-4 text-blue-400" />,
+      action: () => {
+        push({
+          name: "PLATFORM_ALERT",
+          channel: NotificationChannel.TOAST,
+          message: "A transient UI notification has been dispatched successfully."
+        });
+        setIsOpen(false);
+      }
+    },
+    {
+      id: "test_web",
+      category: "Developer",
+      title: "Dispatch Web Native Notification",
+      description: "Trigger the native browser HTML5 Notification overlay.",
+      icon: <Smartphone className="w-4 h-4 text-emerald-400" />,
+      action: () => {
+        push({
+          name: "SYSTEM_EVENT",
+          channel: NotificationChannel.WEB,
+          message: "Critical system event delivered via native browser channel."
+        });
         setIsOpen(false);
       }
     },

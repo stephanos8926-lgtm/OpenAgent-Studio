@@ -51,6 +51,72 @@ export const InitializationDiagnostic: React.FC<DiagnosticProps> = ({ onForceLoa
     setDiagnosticLogs(prev => [...prev, `[${timestamp}] ${message}`]);
   }, []);
 
+  // Hook into window.onerror and console.error
+  useEffect(() => {
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      originalConsoleError.apply(console, args);
+      const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      addLog(`❌ [Console Error]: ${msg}`);
+      // Fire-and-forget to our endpoint
+      fetch('/api/telemetry/crash-dump', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'console.error', message: msg, timestamp: new Date().toISOString() })
+      }).catch(() => {});
+    };
+
+    const originalOnError = window.onerror;
+    window.onerror = (message, source, lineno, colno, error) => {
+      if (originalOnError) originalOnError(message, source, lineno, colno, error);
+      const msg = `Line ${lineno}:${colno} - ${message}`;
+      addLog(`❌ [Global Error]: ${msg}`);
+      fetch('/api/telemetry/crash-dump', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'window.onerror', message: msg, error: String(error), timestamp: new Date().toISOString() })
+      }).catch(() => {});
+      return false;
+    };
+
+    const originalOnUnhandledRejection = window.onunhandledrejection;
+    window.onunhandledrejection = (event: PromiseRejectionEvent) => {
+      if (originalOnUnhandledRejection) originalOnUnhandledRejection.call(window, event);
+      const msg = event.reason ? String(event.reason) : 'Unknown unhandled promise rejection';
+      addLog(`❌ [Unhandled Promise]: ${msg}`);
+      fetch('/api/telemetry/crash-dump', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'unhandledrejection', message: msg, timestamp: new Date().toISOString() })
+      }).catch(() => {});
+    };
+
+    return () => {
+      console.error = originalConsoleError;
+      window.onerror = originalOnError;
+      window.onunhandledrejection = originalOnUnhandledRejection;
+    };
+  }, [addLog]);
+
+  const handleDownloadDump = () => {
+    const dumpData = {
+      timestamp: new Date().toISOString(),
+      logs: diagnosticLogs,
+      storeStatus,
+      apiStatus,
+      assetStatus
+    };
+    const blob = new Blob([JSON.stringify(dumpData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `startup-diagnostic-dump-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Safe Store Verification inside react context tree
   let store: any = null;
   let hasStoreError = false;
@@ -327,13 +393,22 @@ export const InitializationDiagnostic: React.FC<DiagnosticProps> = ({ onForceLoa
 
         {/* Controls block */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <button
-            onClick={handleManualRetry}
-            className="px-4 py-2 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-850 hover:text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
-          >
-            <RefreshCcw className="w-3.5 h-3.5 text-blue-400" />
-            Restart Checks
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleManualRetry}
+              className="px-4 py-2 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-850 hover:text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            >
+              <RefreshCcw className="w-3.5 h-3.5 text-blue-400" />
+              Restart Checks
+            </button>
+            <button
+              onClick={handleDownloadDump}
+              className="px-4 py-2 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-850 hover:text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            >
+              <FileCode className="w-3.5 h-3.5 text-amber-400" />
+              Dump Session JSON
+            </button>
+          </div>
 
           {onForceLoad && (
             <button

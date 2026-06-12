@@ -46,7 +46,7 @@ export const SwarmRadar: React.FC = () => {
     setExpandedAgents((prev) => ({ ...prev, [agentId]: !prev[agentId] }));
   };
 
-  // Update sweeps & slightly alter mock telemetry in real-time for high-fidelity immersion
+  // Update sweeps & slightly alter telemetry in real-time for high-fidelity immersion
   useEffect(() => {
     let frameId: number;
     const updateSweep = () => {

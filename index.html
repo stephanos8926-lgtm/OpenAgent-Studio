@@ -5,6 +5,39 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LangGraph Swarm IDE</title>
+    <script>
+      window.addEventListener('error', function(e) {
+        try {
+          fetch('/api/telemetry/crash-dump', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'fatal_early_window.onerror',
+              message: e.message,
+              filename: e.filename,
+              lineno: e.lineno,
+              colno: e.colno,
+              error: e.error ? String(e.error) : null,
+              timestamp: new Date().toISOString()
+            })
+          });
+          document.body.innerHTML += '<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:99999;padding:20px;font-family:monospace;">FATAL BOOT ERROR: ' + e.message + '</div>';
+        } catch(err) {}
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        try {
+          fetch('/api/telemetry/crash-dump', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'fatal_early_unhandledrejection',
+              message: e.reason ? String(e.reason) : 'Unknown promise rejection',
+              timestamp: new Date().toISOString()
+            })
+          });
+        } catch(err) {}
+      });
+    </script>
   </head>
   <body class="bg-slate-900 text-slate-100 min-h-screen antialiased overflow-x-hidden selection:bg-blue-600/30 selection:text-blue-200">
     <div id="root" class="min-h-screen flex flex-col"></div>

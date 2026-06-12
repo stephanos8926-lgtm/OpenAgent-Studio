@@ -58,21 +58,21 @@ export function createSwarmPipeline(openRouterKey: string, vfsRef: Record<string
 
   // Model Initialization
   const orchestratorModel = new ChatOpenAI({
-    openAIApiKey: openRouterKey,
+    apiKey: openRouterKey,
     configuration: { baseURL: "https://openrouter.ai/api/v1" },
-    modelName: "google/gemini-2.0-flash:free",
+    modelName: "google/gemma-4-31b-it",
     temperature: 0.1,
   });
 
   const workerModel = new ChatOpenAI({
-    openAIApiKey: openRouterKey,
+    apiKey: openRouterKey,
     configuration: { baseURL: "https://openrouter.ai/api/v1" },
     modelName: "qwen/qwen-2.5-coder-32b-instruct:free",
     temperature: 0.1,
   });
 
   const securityModel = new ChatOpenAI({
-    openAIApiKey: openRouterKey,
+    apiKey: openRouterKey,
     configuration: { baseURL: "https://openrouter.ai/api/v1" },
     modelName: "meta-llama/llama-3.3-70b-instruct:free",
     temperature: 0.1,

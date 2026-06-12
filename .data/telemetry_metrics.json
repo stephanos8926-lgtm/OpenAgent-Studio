@@ -1,0 +1,29 @@
+{
+  "totalApiRequests": 0,
+  "totalClientTurns": 4,
+  "totalAgentRuns": 4,
+  "totalErrors": 0,
+  "toolStats": {},
+  "aggregatedPerformanceLogs": [
+    {
+      "type": "system_turn",
+      "message": "Agent turn started for session: c2cf2f63-d895-4aa2-804a-b38e378687f9",
+      "timestamp": 1780672471886
+    },
+    {
+      "type": "system_turn",
+      "message": "Agent turn started for session: default-thread-id",
+      "timestamp": 1780671696844
+    },
+    {
+      "type": "system_turn",
+      "message": "Agent turn started for session: default-thread-id",
+      "timestamp": 1780671671696
+    },
+    {
+      "type": "system_turn",
+      "message": "Agent turn started for session: default-thread-id",
+      "timestamp": 1780671671598
+    }
+  ]
+}

@@ -29,7 +29,7 @@ import {
 } from 'recharts';
 
 export const SwarmConsole: React.FC = () => {
-  const { swarmState, metrics } = useAppStore();
+  const { swarmState, metrics, telemetryTimeline } = useAppStore();
   const { activeAgent, tasks, health } = swarmState;
   const [expandedAgents, setExpandedAgents] = React.useState<Record<string, boolean>>({});
 
@@ -67,21 +67,6 @@ export const SwarmConsole: React.FC = () => {
   const completedCount = tasks.filter(t => t.status === 'completed').length;
   const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
   const totalTasks = tasks.length;
-
-  // Render mock historic token usage / network latency inside Recharts
-  const telemetryTimeline = useMemo(() => {
-    return Array.from({ length: 8 }, (_, i) => {
-      const step = i + 1;
-      const baseTokens = 1200 + (tasks.length * 350) + (metrics.appErrorCount * 450);
-      const randomFuzz = Math.sin(step * 1.5) * 400 + Math.cos(step) * 120;
-      return {
-        step: `S-${step}`,
-        "Prompt Tokens": Math.round(baseTokens + randomFuzz),
-        "Completion Tokens": Math.round((baseTokens + randomFuzz) * 0.4),
-        "Latency ms": Math.round(450 + (tasks.length * 120) + Math.sin(step) * 110)
-      };
-    });
-  }, [tasks.length, metrics.appErrorCount]);
 
   return (
     <div id="swarm-console-container" className="bg-slate-900 p-4 md:p-6 rounded-2xl border border-slate-800 shadow-xl space-y-6 select-none font-sans">

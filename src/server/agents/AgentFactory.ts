@@ -55,17 +55,21 @@ export class AgentFactory {
     let llm;
     
     if (isGeminiKey) {
+      let sanitizedModel = modelName.replace("models/", "").replace("google/", "");
+      if (!sanitizedModel.toLowerCase().includes("gemini")) {
+        sanitizedModel = "gemini-3.5-flash";
+      }
       llm = new ChatOpenAI({
-        openAIApiKey: openRouterKey,
+        apiKey: openRouterKey,
         configuration: {
           baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         },
-        modelName: "gemini-2.5-flash",
+        modelName: sanitizedModel,
         temperature,
       });
     } else {
       llm = new ChatOpenAI({
-        openAIApiKey: openRouterKey,
+        apiKey: openRouterKey,
         configuration: {
           baseURL: "https://openrouter.ai/api/v1",
           defaultHeaders: {

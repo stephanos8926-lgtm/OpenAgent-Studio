@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SwarmBuild IDE Mockup</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>SwarmBuild IDE</h1>
+        <nav>
+            <button onclick="navigate('dashboard')">System Dashboard</button>
+            <button onclick="navigate('editor')">Code Editor</button>
+        </nav>
+    </header>
+    <main id="app">
+        <section id="dashboard">
+            <h2>Swarm Observability</h2>
+            <div id="swarm-agents">
+                <div class="agent" id="agent-orchestrator">Orchestrator: <span class="status">Idle</span></div>
+                <div class="agent" id="agent-coder">Coder: <span class="status">Idle</span></div>
+                <div class="agent" id="agent-auditor">Auditor: <span class="status">Idle</span></div>
+            </div>
+            <div id="activity-log">
+                <h3>Latest Operations</h3>
+                <ul id="log-list"><li>System initialized.</li></ul>
+            </div>
+            <button onclick="simulateSwarmAction()">Trigger Collaborative Fix</button>
+        </section>
+        <section id="editor" style="display:none">
+            <h2>File: src/App.tsx</h2>
+            <textarea id="code-area">// Your code changes appear here...</textarea>
+            <button>Save File</button>
+        </section>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -55,3 +55,24 @@ export interface ChatMessage {
 }
 
 export type ExecutionMode = 'plan' | 'normal' | 'yolo';
+
+export interface LessonLearned {
+  id: string;
+  category: string;
+  errorPattern: string;
+  discoveredConstraint: string;
+  remedialAction: string;
+  createdAt: string;
+}
+
+export interface AgentOperationLog {
+  id: string;
+  threadId: string;
+  timestamp: number;
+  category: 'ORCHESTRATOR' | 'PLANNER' | 'CODER' | 'AUDITOR' | 'VFS' | 'COMPILER' | 'SYSTEM';
+  message: string;
+  status: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
+  duration?: number;
+  metadata?: any;
+}
+

@@ -14,6 +14,7 @@ import { AgentTier, createDeepAgent } from "./BaseAgent.js";
 import { logger } from "../utils/logger.js";
 import { agentHooksService } from "../services/AgentHooksService.js";
 import { vfsLockService } from "../services/VfsLockService.js";
+import { agentLoggerService } from "../services/AgentLoggerService.js";
 
 export interface Task {
   id: string;
@@ -63,18 +64,22 @@ function createModel(modelName: string, temperature: number, openRouterKey: stri
   const isGeminiKey = openRouterKey.startsWith("AIzaSy") || !openRouterKey.startsWith("sk-");
   
   if (isGeminiKey) {
+    let sanitizedModelName = modelName.replace("models/", "").replace("google/", "");
+    if (!sanitizedModelName.toLowerCase().includes("gemini")) {
+      sanitizedModelName = "gemini-3.5-flash";
+    }
     return new ChatOpenAI({
-      openAIApiKey: openRouterKey,
+      apiKey: openRouterKey,
       configuration: {
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
       },
-      modelName: "gemini-2.5-flash",
+      modelName: sanitizedModelName,
       temperature: temperature,
     });
   }
 
   return new ChatOpenAI({
-    openAIApiKey: openRouterKey,
+    apiKey: openRouterKey,
     configuration: {
       baseURL: "https://openrouter.ai/api/v1",
       defaultHeaders: {
@@ -98,11 +103,11 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
   const orchestratorPrompt = "You are the Orchestrator. Direct the user query to 'planner', 'coder', or 'auditor' by returning a structured plan.";
 
   // Create sub-agents using standard React agent or simple LLM wrappers
-  const plannerModel = createModel("google/gemini-2.0-flash-lite-preview-02-05:free", config.agent.plannerTemperature, openRouterKey);
+  const plannerModel = createModel("google/gemma-4-31b-it", config.agent.plannerTemperature, openRouterKey);
   const selectedModel = modelName || config.agent.defaultModel || "openrouter/owl-alpha";
   const coderModel = createModel(selectedModel, config.agent.coderTemperature, openRouterKey);
   const auditorModel = createModel("meta-llama/llama-3.3-70b-instruct", 0.1, openRouterKey);
-  const reviewerModel = createModel("google/gemini-2.0-flash-lite-preview-02-05:free", 0.1, openRouterKey);
+  const reviewerModel = createModel("google/gemma-4-31b-it", 0.1, openRouterKey);
 
   // Tools limits per agent (Limiting reviewer from write parameters)
   const basePlannerTools = tools.filter(t => ["list_dir", "read_file", "get_semantic_map"].includes(t.name));
@@ -151,7 +156,7 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
               const recentMsgs = msgs.slice(-10);
               const historyStr = recentMsgs.map(m => `[${m._getType()}]: ${m.content.toString().substring(0, 300)}`).join('\n');
               
-              const summarizerModel = createModel("google/gemini-2.0-flash-lite-preview-02-05:free", 0, openRouterKey);
+              const summarizerModel = createModel("google/gemma-4-31b-it", 0, openRouterKey);
               const summaryResponse = await summarizerModel.invoke([
                 new SystemMessage("Summarize the following developer conversation history to capture key tasks, resolved issues, files modified, and open items. Keep it technical, dense, and under 250 words."),
                 new HumanMessage(historyStr)
@@ -172,11 +177,43 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
           vfs,
         });
 
-        const result = await targetAgent.invoke({
-          messages: [new HumanMessage(finalPrompt)]
-        });
+        agentLoggerService.logEvent(
+          threadId || "sub-agent-call",
+          type.toUpperCase() as any,
+          `Initiating sub-agent execution for [${roleName}] with instruction preview: "${inst.substring(0, 100)}..."`,
+          "INFO"
+        );
 
+        const startAgent = Date.now();
+        let result;
+        try {
+          result = await targetAgent.invoke({
+            messages: [new HumanMessage(finalPrompt)]
+          });
+        } catch (err: any) {
+          const duration = Date.now() - startAgent;
+          agentLoggerService.logEvent(
+            threadId || "sub-agent-call",
+            type.toUpperCase() as any,
+            `Sub-agent [${roleName}] execution threw error: "${err.message}"`,
+            "ERROR",
+            duration
+          );
+          throw err;
+        }
+        
+        const duration = Date.now() - startAgent;
         const lastMsg = result.messages[result.messages.length - 1];
+        
+        agentLoggerService.logEvent(
+          threadId || "sub-agent-call",
+          type.toUpperCase() as any,
+          `Sub-agent [${roleName}] completed run successfully.`,
+          "SUCCESS",
+          duration,
+          { responseLength: lastMsg.content.toString().length }
+        );
+
         return `### Sub-Agent [${roleName}] Output:\n${lastMsg.content.toString()}`;
       };
 
@@ -253,12 +290,13 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
     systemPrompt: "You are the Code Reviewer agent. Review the provided code and context for correctness, formatting, potential bugs, style issues, and performance optimizations. Provide clear feedback and constructive recommendations. Do NOT make modifications to the system yourself — you possess read-only permissions and must report observations back."
   });
 
-  const orchestratorModel = createModel("google/gemini-2.0-flash-lite-preview-02-05:free", 0, openRouterKey);
+  const orchestratorModel = createModel("google/gemma-4-31b-it", 0, openRouterKey);
 
   // 3. Define Nodes
-  const orchestratorNode = async (state: typeof DeepAgentState.State) => {
+  const orchestratorNode = async (state: typeof DeepAgentState.State, config?: any) => {
     let returnedMessages: BaseMessage[] = [];
     let updatedSummary = state.summary_context;
+    const threadId = config?.configurable?.thread_id || "system-general";
 
     // Context Compression: If we have too many messages, use PlatformAgent to summarize
     if (state.messages.length > 20) {
@@ -325,6 +363,15 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
       message: `Task complexity assessed as [${complexity.toUpperCase()}]. Routing directly to [${decision.toUpperCase()}]. Rationale: ${rationale}`
     });
 
+    agentLoggerService.logEvent(
+      threadId,
+      "ORCHESTRATOR",
+      `Assessed task complexity as ${complexity.toUpperCase()} (Rationale: ${rationale}). Routing dynamic execution path to: ${decision.toUpperCase()}`,
+      "SUCCESS",
+      undefined,
+      { complexity, rationale, nextAgent: decision }
+    );
+
     returnedMessages.push(new AIMessage(`[Orchestrator] Task Complexity: **${complexity.toUpperCase()}**.\n*Routing to ${decision === "planner" ? "Strategic Planner for layout decomposition" : "Code Generator directly (fast execution path)"}*.\n*Rationale: ${rationale}*`));
 
     return { 
@@ -334,7 +381,15 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
     };
   };
 
-  const plannerNode = async (state: typeof DeepAgentState.State) => {
+  const plannerNode = async (state: typeof DeepAgentState.State, config?: any) => {
+    const threadId = config?.configurable?.thread_id || "system-general";
+    agentLoggerService.logEvent(
+      threadId,
+      "PLANNER",
+      "Strategic planner node active. Drafting project structure and task breakdown schema.",
+      "INFO"
+    );
+
     const contextMessages = (state.summary_context || "").length > 0 ? [new SystemMessage(`CONTEXT SUMMARY: ${state.summary_context}`)] : [];
     const res = await plannerAgent.invoke({ 
       messages: [...contextMessages, ...state.messages] 
@@ -360,21 +415,54 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
       logger.error({ err }, "Failed to parse Task DAG from planner output");
     }
 
+    agentLoggerService.logEvent(
+      threadId,
+      "PLANNER",
+      `Planning formulated successfully. Formed dynamic Task DAG with ${newTasks.length} milestone items.`,
+      newTasks.length > 0 ? "SUCCESS" : "WARNING",
+      undefined,
+      { taskCount: newTasks.length }
+    );
+
     return { 
       messages: res.messages,
       task_dag: newTasks
     };
   };
 
-  const coderNode = async (state: typeof DeepAgentState.State) => {
+  const coderNode = async (state: typeof DeepAgentState.State, config?: any) => {
+    const threadId = config?.configurable?.thread_id || "system-general";
+    agentLoggerService.logEvent(
+      threadId,
+      "CODER",
+      `Code Generator node active. Creating/updating file structures inside isolated virtual namespace.`,
+      "INFO"
+    );
+
     const contextMessages = (state.summary_context || "").length > 0 ? [new SystemMessage(`CONTEXT SUMMARY: ${state.summary_context}`)] : [];
     const res = await coderAgent.invoke({ 
       messages: [...contextMessages, ...state.messages] 
     }, { runName: "coder" });
+
+    agentLoggerService.logEvent(
+      threadId,
+      "CODER",
+      `Code execution phase finalized. Virtual file system adjustments successfully recorded.`,
+      "SUCCESS"
+    );
+
     return { messages: res.messages };
   };
 
-  const auditorNode = async (state: typeof DeepAgentState.State) => {
+  const auditorNode = async (state: typeof DeepAgentState.State, config?: any) => {
+    const threadId = config?.configurable?.thread_id || "system-general";
+    agentLoggerService.logEvent(
+      threadId,
+      "AUDITOR",
+      "Security & Quality Auditor node active. Testing build soundness & static code checking.",
+      "INFO"
+    );
+
     const contextMessages = (state.summary_context || "").length > 0 ? [new SystemMessage(`CONTEXT SUMMARY: ${state.summary_context}`)] : [];
     // Automatically prompt the auditor to run verification commands
     const verificationPrompt = new HumanMessage("System Instruction: Automatically run 'npm run build' or 'npm run lint' to verify code integrity. If failure occurs, list the specific errors and set the health status to FAILING.");
@@ -392,6 +480,15 @@ export function createSwarmGraph(vfs: IFileSystem, openRouterKey: string, modelN
       lastMsgContent.includes("issue") ||
       lastMsgContent.includes("[error code");
     
+    agentLoggerService.logEvent(
+      threadId,
+      "AUDITOR",
+      `Security/QA verification finalized. Direct test status is: ${isFailing ? "FAILING (re-triggering remedial generation)" : "GOOD (passed compliance check)"}.`,
+      isFailing ? "ERROR" : "SUCCESS",
+      undefined,
+      { environment_health: isFailing ? "failing" : "good" }
+    );
+
     return { 
         messages: res.messages, 
         environment_health: isFailing ? 'failing' : 'good' 

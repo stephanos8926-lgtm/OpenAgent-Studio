@@ -27,6 +27,7 @@ export const WorkspaceTour: React.FC = () => {
       }, 1500);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, []);
 
   // Set up listeners for the command palette to easily restart the tour

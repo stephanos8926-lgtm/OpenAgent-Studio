@@ -17,20 +17,20 @@ export class PlatformAgent {
     
     if (isGeminiKey) {
       this.model = new ChatOpenAI({
-        openAIApiKey: openRouterKey,
+        apiKey: openRouterKey,
         configuration: {
           baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         },
-        modelName: "gemini-2.5-flash",
+        modelName: "gemma-2-27b-it",
         temperature: 0,
       });
     } else {
       this.model = new ChatOpenAI({
-        openAIApiKey: openRouterKey,
+        apiKey: openRouterKey,
         configuration: {
           baseURL: "https://openrouter.ai/api/v1",
         },
-        modelName: "google/gemini-2.0-flash-lite-preview-02-05:free",
+        modelName: "google/gemma-2-27b-it",
         temperature: 0,
       });
     }

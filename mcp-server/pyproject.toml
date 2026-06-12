@@ -1,0 +1,8 @@
+[project]
+name = "mcp-mount-engine"
+version = "0.1.0"
+description = "Portable Python MCP Engine for VFS Mounting"
+dependencies = [
+  "mcp",
+  "watchdog"
+]

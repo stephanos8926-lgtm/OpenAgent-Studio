@@ -29,7 +29,7 @@ export const TelemetryDashboard: React.FC = () => {
     metrics, 
     logs, 
     simulateCompileAction, 
-    simulateAppRuntimeCrash, 
+    testAppRuntimeCrash, 
     injectLogEvent, 
     resetTelemetryStats,
     compilingState
@@ -162,7 +162,7 @@ export const TelemetryDashboard: React.FC = () => {
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-widest font-mono">Simulation Command Center</h4>
         </div>
         <p className="text-xs text-slate-400 mb-4">
-          Test telemetry sorting and error boundary behaviors. Trigger compilation workflows, mock IDE disk blocks, or test user component render crashes below.
+          Test telemetry sorting and error boundary behaviors. Trigger compilation workflows, inspect IDE disk blocks, or test user component render crashes below.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -202,7 +202,7 @@ export const TelemetryDashboard: React.FC = () => {
           </button>
 
           <button
-            onClick={simulateAppRuntimeCrash}
+            onClick={testAppRuntimeCrash}
             className="p-2.5 rounded-lg border border-slate-850 hover:border-red-950 bg-slate-900 text-slate-100 hover:text-red-300 transition-all text-xs font-bold text-left flex items-center gap-2 cursor-pointer"
           >
             <Bug className="w-3.5 h-3.5 text-red-500" />

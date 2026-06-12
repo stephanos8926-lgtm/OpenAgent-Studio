@@ -22,7 +22,7 @@ import { SwarmConsole } from './SwarmConsole';
 import { SwarmRadar } from './SwarmRadar';
 
 export const MeshController = () => {
-  const { swarmState, setSwarmState, terminalLogs, activeBreakpoint, setBreakpoint } = useAppStore();
+  const { swarmState, setSwarmState, terminalLogs, activeBreakpoint, setBreakpoint, setShowSettingsModal } = useAppStore();
   const { activeAgent, tasks, health } = swarmState;
   const [showSettings, setShowSettings] = useState(false);
   const [governanceMode, setGovernanceMode] = useState(false);
@@ -204,8 +204,9 @@ export const MeshController = () => {
               <RefreshCw className="w-5 h-5" />
             </button>
             <button 
-              onClick={() => setShowSettings(!showSettings)}
+              onClick={() => setShowSettingsModal(true)}
               className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200"
+              title="Open Connection Settings"
             >
               <Settings className="w-5 h-5" />
             </button>

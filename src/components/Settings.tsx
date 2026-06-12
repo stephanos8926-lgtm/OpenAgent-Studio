@@ -1,13 +1,44 @@
 // File: src/components/Settings.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../lib/store';
 import { Settings as SettingsIcon, ShieldCheck, Database, HardDrive, Wifi, Sliders, Key, Zap } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { metrics, swarmState, openRouterKey, setOpenRouterKey, yoloMode, setYoloMode } = useAppStore();
+  const { metrics, swarmState, openRouterKey, setOpenRouterKey, yoloMode, setYoloMode, modelName, setModelName, apiProvider, setApiProvider } = useAppStore();
   const [throttleLimit, setThrottleLimit] = useState(3000);
-  const [mockClusterLoc, setMockClusterLoc] = useState('us-east1-gcp');
+  const [availableModels, setAvailableModels] = useState<{id: string, name: string}[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+
+  const fetchModels = async () => {
+    setIsLoadingModels(true);
+    setAvailableModels([]); // Clear current list on start of fetch
+    try {
+      const res = await fetch(`/api/models?provider=${apiProvider}`);
+      const data = await res.json();
+      if (data.success && data.models) {
+        const newModels = data.models;
+        setAvailableModels(newModels);
+        
+        // If current model isn't in new list, reset to first or empty
+        if (newModels.length > 0 && !newModels.find((m: any) => m.id === modelName)) {
+           setModelName(newModels[0].id);
+        } else if (newModels.length === 0) {
+           setModelName('');
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch models", e);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  useEffect(() => {
+    // Reset model name when provider changes before fetching
+    setModelName('');
+    fetchModels();
+  }, [apiProvider]);
 
   return (
     <div id="settings-panel-container" className="bg-slate-900 rounded-2xl border border-slate-800 p-4 md:p-6 space-y-6 font-sans">
@@ -19,7 +50,7 @@ export const Settings: React.FC = () => {
         </div>
         <div>
           <h3 className="text-sm font-bold text-slate-100 font-display">System Controls & Constants</h3>
-          <p className="text-[11px] text-slate-400">Configure simulated variables for testing full-stack telemetry and limits.</p>
+          <p className="text-[11px] text-slate-400">Configure platform connection variables and API keys.</p>
         </div>
       </div>
 
@@ -34,16 +65,45 @@ export const Settings: React.FC = () => {
 
           <div className="space-y-1.5 bg-slate-950 p-3 rounded-lg border border-slate-850">
             <div className="flex justify-between items-center mb-1 text-[11px] font-mono">
-              <span className="text-slate-400 flex items-center gap-1.5 font-bold"><Key className="w-3 h-3 text-emerald-400"/> API KEY:</span>
+              <span className="text-slate-400 flex items-center gap-1.5 font-bold"><Key className="w-3 h-3 text-emerald-400"/> API PROVIDER & KEY:</span>
             </div>
+            
+            <select
+              value={apiProvider}
+              onChange={e => setApiProvider(e.target.value as 'google' | 'openrouter')}
+              className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-lg p-1.5 text-xs focus:outline-none focus:border-emerald-600 font-mono mb-2"
+            >
+              <option value="google">Google Gemini API</option>
+              <option value="openrouter">OpenRouter API</option>
+            </select>
+
             <input
               type="password"
               value={openRouterKey}
               onChange={e => setOpenRouterKey(e.target.value)}
-              placeholder="sk-or-v1-..."
+              placeholder={apiProvider === 'google' ? "AIza..." : "sk-or-v1-..."}
               className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-lg p-1.5 text-xs focus:outline-none focus:border-emerald-600 font-mono"
             />
-            <p className="text-[9px] text-slate-500">Required: OpenRouter API key for live LLM streaming.</p>
+            <p className="text-[9px] text-slate-500">Required: API key for live LLM streaming.</p>
+
+            <div className="flex items-center gap-2 mt-2">
+              <select
+                value={modelName}
+                onChange={e => setModelName(e.target.value)}
+                className="flex-1 bg-slate-900 border border-slate-800 text-slate-300 rounded-lg p-1.5 text-xs focus:outline-none focus:border-emerald-600 font-mono"
+              >
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <button 
+                onClick={fetchModels}
+                disabled={isLoadingModels || !openRouterKey}
+                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-bold"
+              >
+                {isLoadingModels ? '...' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
           <div className="space-y-1.5 bg-slate-950 p-3 rounded-lg border border-slate-850 flex items-start gap-3">
@@ -66,16 +126,10 @@ export const Settings: React.FC = () => {
           {/* Cluster configuration option */}
           <div className="space-y-1.5 bg-slate-950 p-3 rounded-lg border border-slate-850">
             <div className="text-[11px] font-mono text-slate-400 font-bold uppercase mb-1.5">Deploy Region Context:</div>
-            <select
-              value={mockClusterLoc}
-              onChange={e => setMockClusterLoc(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-lg p-1.5 text-xs focus:outline-none focus:border-slate-600 cursor-pointer"
-            >
-              <option value="us-east1-gcp">us-east1 (Google Cloud Run Container)</option>
-              <option value="us-west2-gcp">us-west2 (Silicon Valley Core Network)</option>
-              <option value="eu-west1-gcp">eu-west1 (Dublin Server Node)</option>
-            </select>
-            <p className="text-[9px] text-slate-500">Switches simulated telemetry logging geolocation and timezone alignment.</p>
+            <div className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-lg p-2 text-xs font-mono">
+              us-east1 (Google Cloud Run Container)
+            </div>
+            <p className="text-[9px] text-slate-500">Platform deployment origin and timezone context.</p>
           </div>
         </div>
 

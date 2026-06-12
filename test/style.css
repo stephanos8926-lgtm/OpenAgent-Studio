@@ -1,0 +1,8 @@
+body { font-family: sans-serif; margin: 0; padding: 0; background: #f4f4f9; }
+header { padding: 1rem; background: #333; color: white; display: flex; justify-content: space-between; }
+nav button { margin-left: 10px; }
+main { padding: 2rem; }
+.agent { display: inline-block; padding: 10px; border: 1px solid #ccc; margin-right: 10px; background: white; }
+.status { color: blue; font-weight: bold; }
+#code-area { width: 100%; height: 300px; font-family: monospace; }
+#activity-log { margin-top: 20px; background: #fff; padding: 10px; border-radius: 5px; }

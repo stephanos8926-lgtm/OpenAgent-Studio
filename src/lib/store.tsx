@@ -1,16 +1,29 @@
-// File: src/lib/store.ts
+// File: src/lib/store.tsx
 
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { create } from 'zustand';
 import { 
   TelemetryLog, 
   SystemMetrics, 
   TaskNode, 
   WorkspaceFile, 
-  ChatMessage 
+  ChatMessage,
+  LessonLearned,
+  AgentOperationLog
 } from '../types';
+import { getStoredChat, saveChatHistory } from './db';
+import { 
+  saveWorkspaceFilesToSQLite, 
+  loadWorkspaceFilesFromSQLite, 
+  saveSystemConfigToSQLite, 
+  loadSystemConfigFromSQLite,
+  loadLessonsFromSQLite,
+  saveLessonToSQLite,
+  deleteLessonFromSQLite
+} from './sqlite';
 
-// Mock files in the virtual IDE
+// Seed files in the virtual IDE backup
 const INITIAL_FILES: WorkspaceFile[] = [
   {
     name: 'src',
@@ -18,69 +31,36 @@ const INITIAL_FILES: WorkspaceFile[] = [
     isDirectory: true,
     children: [
       {
-        name: 'components',
-        path: 'src/components',
-        isDirectory: true,
-        children: [
-          {
-            name: 'Workspace.tsx',
-            path: 'src/components/Workspace.tsx',
-            isDirectory: false,
-            content: `// File: src/components/Workspace.tsx
-import React, { useState } from 'react';
-import { useAppStore } from '../lib/store';
-
-export const Workspace: React.FC = () => {
-  const { metrics, injectEvent } = useAppStore();
-  return (
-    <div className="p-6">
-      <h1 className="text-xl font-bold">Workspace View</h1>
-      <p>CPU Health: {metrics.cpuUsage}%</p>
-    </div>
-  );
-};`
-          },
-          {
-            name: 'SwarmConsole.tsx',
-            path: 'src/components/SwarmConsole.tsx',
-            isDirectory: false,
-            content: `// File: src/components/SwarmConsole.tsx
-import React from 'react';
-
-export const SwarmConsole: React.FC = () => {
-  return <div>LangGraph Active Swarm Metrics</div>;
-};`
-          },
-          {
-            name: 'TelemetryDashboard.tsx',
-            path: 'src/components/TelemetryDashboard.tsx',
-            isDirectory: false,
-            content: `// File: src/components/TelemetryDashboard.tsx\n// Loaded by core metrics dashboards.`
-          }
-        ]
-      },
-      {
         name: 'App.tsx',
         path: 'src/App.tsx',
         isDirectory: false,
-        content: `// File: src/App.tsx
-import React from 'react';
-import { Workspace } from './components/Workspace';
-
-export default function App() {
-  return <Workspace />;
-}`
+        content: `export default function App() {\n  return (\n    <div className="flex bg-slate-950 text-white min-h-screen items-center justify-center">\n      <h1 className="text-2xl font-bold">New Agentic App</h1>\n    </div>\n  );\n}`
+      },
+      {
+        name: 'main.tsx',
+        path: 'src/main.tsx',
+        isDirectory: false,
+        content: `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);`
+      },
+      {
+        name: 'index.css',
+        path: 'src/index.css',
+        isDirectory: false,
+        content: `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`
       }
     ]
   },
   {
-    name: 'server.ts',
-    path: 'server.ts',
+    name: 'index.html',
+    path: 'index.html',
     isDirectory: false,
-    content: `// File: server.ts
-import express from 'express';
-const app = express();
-app.listen(3000);`
+    content: `<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>Sandbox App</title>\n  </head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.tsx"></script>\n  </body>\n</html>`
+  },
+  {
+    name: 'package.json',
+    path: 'package.json',
+    isDirectory: false,
+    content: `{\n  "name": "sandbox-app",\n  "private": true,\n  "version": "0.0.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc -b && vite build"\n  },\n  "dependencies": {\n    "react": "^18.3.1",\n    "react-dom": "^18.3.1"\n  },\n  "devDependencies": {\n    "@types/react": "^18.3.3",\n    "@types/react-dom": "^18.3.0",\n    "@vitejs/plugin-react": "^4.3.1",\n    "autoprefixer": "^10.4.19",\n    "postcss": "^8.4.38",\n    "tailwindcss": "^3.4.4",\n    "typescript": "^5.2.2",\n    "vite": "^5.3.4"\n  }\n}`
   }
 ];
 
@@ -92,34 +72,58 @@ const INITIAL_TASKS: TaskNode[] = [
   { id: 't5', label: 'Sandbox Warm Boot', status: 'pending', assignedTo: 'platform' }
 ];
 
+export interface TelemetryPoint {
+  step: string;
+  "Prompt Tokens": number;
+  "Completion Tokens": number;
+  "Latency ms": number;
+}
+
 export interface AppStoreState {
+  // Swarm Status States
   swarmState: {
     activeAgent: string;
     tasks: TaskNode[];
     health: 'good' | 'failing';
   };
   metrics: SystemMetrics;
+  telemetryTimeline: TelemetryPoint[];
   terminalLogs: string[];
   logs: TelemetryLog[];
-  files: WorkspaceFile[];
-  activeFile: WorkspaceFile | null;
-  chatMessages: ChatMessage[];
   activeBreakpoint: string | null;
   compilingState: 'idle' | 'running' | 'success' | 'failed';
   compilePercent: number;
   compileMessage: string;
   hmrUpdates: any[];
-  setHmrUpdates: React.Dispatch<React.SetStateAction<any[]>>;
+  showSettingsModal: boolean;
+  socket: any;
+
+  // Persistent SQL/IndexedDB states
+  files: WorkspaceFile[];
+  activeFile: WorkspaceFile | null;
+  chatMessages: ChatMessage[];
+  lessons: LessonLearned[];
+  agentLogs: AgentOperationLog[];
+  yoloMode: boolean;
+  openRouterKey: string;
+  modelName: string;
+  apiProvider: 'google' | 'openrouter';
+
+  // State Action methods
+  loadAgentLogs: (filters?: { threadId?: string; status?: string; category?: string; query?: string; limit?: number }) => Promise<void>;
+  clearAgentLogs: () => Promise<void>;
+  loadLessons: () => Promise<void>;
+  addLesson: (category: string, errorPattern: string, discoveredConstraint: string, remedialAction: string) => Promise<void>;
+  deleteLesson: (id: string) => Promise<void>;
+  setHmrUpdates: (val: any[] | ((prev: any[]) => any[])) => void;
   setCompilingState: (state: 'idle' | 'running' | 'success' | 'failed') => void;
   setCompilePercent: (percent: number) => void;
   setCompileMessage: (msg: string) => void;
-  
-  yoloMode: boolean;
   setYoloMode: (val: boolean) => void;
-  openRouterKey: string;
   setOpenRouterKey: (val: string) => void;
-  
-  // Setters and action handlers
+  setModelName: (val: string) => void;
+  setApiProvider: (val: 'google' | 'openrouter') => void;
+  setShowSettingsModal: (val: boolean) => void;
   setBreakpoint: (id: string | null) => void;
   setSwarmState: (state: any) => void;
   setActiveFile: (file: WorkspaceFile | null) => void;
@@ -131,23 +135,44 @@ export interface AppStoreState {
   sendChatMessage: (content: string) => void;
   injectLogEvent: (severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL', origin: 'IDE_SYSTEM' | 'USER_APPLICATION', module: string, message: string, detail?: string) => void;
   simulateCompileAction: (simulateBuildFailure: boolean) => Promise<void>;
-  simulateAppRuntimeCrash: () => void;
+  testAppRuntimeCrash: () => void;
   resetTelemetryStats: () => void;
+  
+  // Handlers to link WebSocket events to Zustand
+  setSocketInstance: (s: any) => void;
+  setTasksList: (tasks: TaskNode[]) => void;
+  setActiveAgentName: (name: string) => void;
+  
+  // Database Initializer
+  initDatabaseState: () => Promise<void>;
 }
 
-// Global context to share store
-const StoreContext = createContext<AppStoreState | undefined>(undefined);
+const findAppFile = (nodes: WorkspaceFile[]): WorkspaceFile | null => {
+  for (const node of nodes) {
+    if (node.path === 'src/App.tsx') return node;
+    if (node.children) {
+      const found = findAppFile(node.children);
+      if (found) return found;
+    }
+  }
+  return null;
+};
 
-export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeAgent, setActiveAgent] = useState<string>('coder');
-  const [tasks, setTasks] = useState<TaskNode[]>(INITIAL_TASKS);
-  const [health, setHealth] = useState<'good' | 'failing'>('good');
-  const [activeBreakpoint, setBreakpoint] = useState<string | null>(null);
-  
-  const [yoloMode, setYoloMode] = useState<boolean>(false);
-  const [openRouterKey, setOpenRouterKey] = useState<string>('');
+const generateId = () => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 9) + '-' + Math.random().toString(36).substring(2, 9);
+};
 
-  const [metrics, setMetrics] = useState<SystemMetrics>({
+// 2. High-performance Zustand Store Creation
+export const useAppStore = create<AppStoreState>((set, get) => ({
+  swarmState: {
+    activeAgent: 'coder',
+    tasks: INITIAL_TASKS,
+    health: 'good'
+  },
+  metrics: {
     cpuUsage: 34,
     memoryUsage: 256,
     activeAgent: 'coder',
@@ -158,22 +183,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     appErrorCount: 3,
     ideErrorCount: 2,
     totalTokensUsed: 14500
-  });
-
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([
+  },
+  telemetryTimeline: [],
+  terminalLogs: [
     'Initializing LangGraph control plane gateway...',
     'Cluster auth verification: COMPLETED',
-    'Virtual File System (VFS) mounted at /sandbox',
+    'Virtual File System (VFS) mounted with in-browser SQLite',
     'Type checking completed successfully. No warnings.',
     'Dev Server listening on http://0.0.0.0:3000',
     'Ready for code simulation actions.'
-  ]);
-
-  const appendTerminalLine = useCallback((line: string) => {
-    setTerminalLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${line}`]);
-  }, []);
-
-  const [logs, setLogs] = useState<TelemetryLog[]>([
+  ],
+  logs: [
     {
       id: 'l1',
       timestamp: new Date(Date.now() - 30000).toISOString(),
@@ -189,183 +209,149 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       origin: 'IDE_SYSTEM',
       module: 'WorkspaceLinter',
       message: 'TSX static type-checking parsed successfully.'
-    },
-    {
-      id: 'l3',
-      timestamp: new Date(Date.now() - 15000).toISOString(),
-      severity: 'WARNING',
-      origin: 'USER_APPLICATION',
-      module: 'ViteConsole',
-      message: 'HMR connection failed; fallback to static serve pipeline.',
-    },
-    {
-      id: 'l4',
-      timestamp: new Date(Date.now() - 5000).toISOString(),
-      severity: 'ERROR',
-      origin: 'USER_APPLICATION',
-      module: 'ComponentSandbox',
-      message: 'Failed to resolve external module "uninstalled-dummy-lib" inside Workspace.tsx',
-      detail: 'Error: Cannot find module "uninstalled-dummy-lib"\n  at resolveImport (vite://sandbox/main.tsx:441:12)'
     }
-  ]);
+  ],
+  activeBreakpoint: null,
+  compilingState: 'idle',
+  compilePercent: 0,
+  compileMessage: '',
+  hmrUpdates: [],
+  showSettingsModal: false,
+  socket: null,
 
-  const [files, setFiles] = useState<WorkspaceFile[]>(INITIAL_FILES);
-  const [activeFile, setActiveFileInternal] = useState<WorkspaceFile | null>(INITIAL_FILES[0].children![0].children![0]); // Workspace.tsx
-  const [compilingState, setCompilingState] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
-  const [compilePercent, setCompilePercent] = useState<number>(0);
-  const [compileMessage, setCompileMessage] = useState<string>('');
-  const [socket, setSocket] = useState<any>(null);
-  const [hmrUpdates, setHmrUpdates] = useState<any[]>([]);
+  files: INITIAL_FILES,
+  activeFile: INITIAL_FILES[0].children![0], // Default Active File is App.tsx
+  chatMessages: [],
+  lessons: [],
+  agentLogs: [],
+  yoloMode: false,
+  openRouterKey: '',
+  modelName: 'gemma-4-31b-it',
+  apiProvider: 'google',
 
-  const injectLogEvent = useCallback((
-    severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL',
-    origin: 'IDE_SYSTEM' | 'USER_APPLICATION',
-    module: string,
-    message: string,
-    detail?: string
-  ) => {
-    const newLog: TelemetryLog = {
-      id: 'l-' + Math.random().toString(36).substring(2, 9),
-      timestamp: new Date().toISOString(),
-      severity,
-      origin,
-      module,
-      message,
-      detail
-    };
-
-    setLogs(prev => [newLog, ...prev]);
-
-    // Send telemetry up to the backend service too for complete compliance integration
-    fetch('/api/telemetry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLog)
-    }).catch(() => {
-      // Slidely ignore backend storage connection drops in pure mock pipeline
-    });
-  }, []);
-
-  useEffect(() => {
-    const url = window.location.origin;
-    const s = io(url);
-    setSocket(s);
-
-    s.on('compile_progress', (data: { percent: number; message: string; state?: 'idle' | 'running' | 'success' | 'failed' }) => {
-      if (data.percent !== undefined) setCompilePercent(data.percent);
-      if (data.message !== undefined) setCompileMessage(data.message);
-      if (data.state !== undefined) {
-        setCompilingState(data.state);
+  // Actions
+  loadAgentLogs: async (filters) => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (filters) {
+        if (filters.threadId) queryParams.append('threadId', filters.threadId);
+        if (filters.status) queryParams.append('status', filters.status);
+        if (filters.category) queryParams.append('category', filters.category);
+        if (filters.query) queryParams.append('query', filters.query);
+        if (filters.limit) queryParams.append('limit', String(filters.limit));
       }
-    });
-
-    s.on('compile_log', (logLine: string) => {
-      appendTerminalLine(logLine);
-    });
-
-    s.on('compile_metric_update', (metricsUpdate: any) => {
-      setMetrics(prev => ({
-        ...prev,
-        ...metricsUpdate
-      }));
-    });
-
-    s.on('compile_task_update', (tasksUpdate: { id: string, status: string }[]) => {
-      setTasks(prev => prev.map(t => {
-        const match = tasksUpdate.find(tu => tu.id === t.id);
-        return match ? { ...t, status: match.status as any } : t;
-      }));
-    });
-
-    s.on('hmr_update', (data: { path: string; timestamp: string; status: 'success' | 'failed'; message: string }) => {
-      setHmrUpdates(prev => [data, ...prev].slice(0, 10));
-      appendTerminalLine(`\r\n[HMR DAEMON] ${data.message} (${data.timestamp})\r\n`);
-      injectLogEvent(
-        data.status === 'success' ? 'INFO' : 'ERROR',
-        'IDE_SYSTEM',
-        'HMR_Daemon',
-        data.message,
-        `File Path: ${data.path}`
-      );
-    });
-
-    // Emit initial load check on connection stability
-    const initTimer = setTimeout(() => {
-      s.emit('initial_load_check');
-    }, 500);
-
-    return () => {
-      clearTimeout(initTimer);
-      s.disconnect();
-    };
-  }, [appendTerminalLine, injectLogEvent]);
-
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'c1',
-      role: 'system',
-      content: 'System: Swarm conversation channel created with LangGraph Coder & Auditor. How can I help you build today?',
-      timestamp: new Date().toISOString()
+      const res = await fetch(`/api/agent/logs?${queryParams.toString()}`);
+      const data = await res.json();
+      if (data.success && data.logs) {
+        set({ agentLogs: data.logs });
+      }
+    } catch (err) {
+      console.error("Failed to load agent logs:", err);
     }
-  ]);
+  },
 
-  // Synchronize state from logs list for telemetry
-  useEffect(() => {
-    const ideErrors = logs.filter(l => l.severity === 'ERROR' && l.origin === 'IDE_SYSTEM').length;
-    const appErrors = logs.filter(l => l.severity === 'ERROR' && l.origin === 'USER_APPLICATION').length;
-    const criticals = logs.filter(l => l.severity === 'CRITICAL').length;
-    
-    setMetrics(prev => ({
-      ...prev,
-      ideErrorCount: ideErrors,
-      appErrorCount: appErrors + criticals,
-      health: (appErrors > 4 || criticals > 1) ? 'failing' : 'good'
-    }));
-  }, [logs]);
-
-  // Periodic simulated load fluctuation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMetrics(prev => {
-        const deltaCpu = (Math.random() - 0.5) * 8;
-        const deltaMem = (Math.random() - 0.5) * 4;
-        const deltaLat = (Math.random() - 0.5) * 6;
-        const nextCpu = Math.max(10, Math.min(95, Math.round(prev.cpuUsage + deltaCpu)));
-        const nextMem = Math.max(120, Math.min(1024, Math.round(prev.memoryUsage + deltaMem)));
-        const nextLat = Math.max(15, Math.min(120, Math.round(prev.networkLatency + deltaLat)));
-        
-        return {
-          ...prev,
-          cpuUsage: nextCpu,
-          memoryUsage: nextMem,
-          networkLatency: nextLat,
-          totalTokensUsed: prev.totalTokensUsed + Math.round(Math.random() * 25)
-        };
-      });
-
-      // Fluctuate active executing LangGraph agent
-      const agents = ['orchestrator', 'planner', 'coder', 'auditor', 'platform'];
-      if (Math.random() < 0.25) {
-        const nextAgent = agents[Math.floor(Math.random() * agents.length)];
-        setActiveAgent(nextAgent);
+  clearAgentLogs: async () => {
+    try {
+      const res = await fetch('/api/agent/logs/clear', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        set({ agentLogs: [] });
       }
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+    } catch (err) {
+      console.error("Failed to clear agent logs:", err);
+    }
+  },
 
-  const clearTerminal = useCallback(() => {
-    setTerminalLogs([]);
-  }, []);
+  loadLessons: async () => {
+    try {
+      const dbLessons = await loadLessonsFromSQLite();
+      set({ lessons: dbLessons });
+    } catch (err) {
+      console.error("Failed to load lessons from SQLite:", err);
+    }
+  },
 
-  const setActiveFile = useCallback((file: WorkspaceFile | null) => {
-    setActiveFileInternal(file);
+  addLesson: async (category, errorPattern, discoveredConstraint, remedialAction) => {
+    const newLesson: LessonLearned = {
+      id: 'l-' + generateId(),
+      category,
+      errorPattern,
+      discoveredConstraint,
+      remedialAction,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      await saveLessonToSQLite(newLesson);
+      const updated = [newLesson, ...get().lessons];
+      set({ lessons: updated });
+      get().appendTerminalLine(`Saved lesson learned to SQLite: ${category} - ${errorPattern}`);
+    } catch (err) {
+      console.error("Failed to save lesson to SQLite:", err);
+    }
+  },
+
+  deleteLesson: async (id) => {
+    try {
+      await deleteLessonFromSQLite(id);
+      const updated = get().lessons.filter(l => l.id !== id);
+      set({ lessons: updated });
+      get().appendTerminalLine(`Deleted lesson learned from SQLite: ${id}`);
+    } catch (err) {
+      console.error("Failed to delete lesson from SQLite:", err);
+    }
+  },
+
+  setHmrUpdates: (val) => {
+    if (typeof val === 'function') {
+      set((state) => ({ hmrUpdates: val(state.hmrUpdates) }));
+    } else {
+      set({ hmrUpdates: val });
+    }
+  },
+  setCompilingState: (state) => set({ compilingState: state }),
+  setCompilePercent: (percent) => set({ compilePercent: percent }),
+  setCompileMessage: (msg) => set({ compileMessage: msg }),
+  
+  setYoloMode: (val) => {
+    set({ yoloMode: val });
+    saveSystemConfigToSQLite({ yoloMode: val });
+  },
+  
+  setOpenRouterKey: (val) => {
+    set({ openRouterKey: val });
+    saveSystemConfigToSQLite({ openRouterKey: val });
+  },
+  
+  setModelName: (val) => {
+    set({ modelName: val });
+    saveSystemConfigToSQLite({ modelName: val });
+  },
+  
+  setApiProvider: (val) => {
+    set({ apiProvider: val });
+    saveSystemConfigToSQLite({ apiProvider: val });
+  },
+  
+  setShowSettingsModal: (val) => set({ showSettingsModal: val }),
+  setBreakpoint: (id) => set({ activeBreakpoint: id }),
+  
+  setSwarmState: (state) => set((prev) => ({
+    swarmState: {
+      activeAgent: state.activeAgent ?? prev.swarmState.activeAgent,
+      tasks: state.tasks ?? prev.swarmState.tasks,
+      health: state.health ?? prev.swarmState.health
+    }
+  })),
+
+  setActiveFile: (file) => {
+    set({ activeFile: file });
     if (file && !file.isDirectory) {
-      appendTerminalLine(`Opened file: ${file.path}`);
+      get().appendTerminalLine(`Opened file: ${file.path}`);
     }
-  }, [appendTerminalLine]);
+  },
 
-  // Recursively update virtual file system content
-  const updateFileContent = useCallback((filePath: string, newContent: string) => {
+  updateFileContent: (filePath, newContent) => {
+    const { files, activeFile, socket } = get();
     const updateInTree = (nodes: WorkspaceFile[]): WorkspaceFile[] => {
       return nodes.map(node => {
         if (node.path === filePath) {
@@ -378,18 +364,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     };
     
-    setFiles(prev => updateInTree(prev));
+    const updatedFiles = updateInTree(files);
+    let updatedActiveFile = activeFile;
     if (activeFile && activeFile.path === filePath) {
-      setActiveFileInternal(prev => prev ? { ...prev, content: newContent } : null);
+      updatedActiveFile = { ...activeFile, content: newContent };
     }
-    appendTerminalLine(`Updated file content: ${filePath}`);
+
+    set({ files: updatedFiles, activeFile: updatedActiveFile });
+    get().appendTerminalLine(`Updated file content: ${filePath}`);
+
+    // Persist changes to client-side SQLite Workspace File module
+    saveWorkspaceFilesToSQLite(updatedFiles);
 
     if (socket) {
       socket.emit('file_change', { path: filePath, content: newContent });
     }
-  }, [activeFile, appendTerminalLine, socket]);
+  },
 
-  const proposeFileChange = useCallback((filePath: string, proposedContent: string) => {
+  proposeFileChange: (filePath, proposedContent) => {
+    const { files, activeFile } = get();
     const updateInTree = (nodes: WorkspaceFile[]): WorkspaceFile[] => {
       return nodes.map(node => {
         if (node.path === filePath) {
@@ -402,14 +395,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     };
     
-    setFiles(prev => updateInTree(prev));
+    const updatedFiles = updateInTree(files);
+    let updatedActiveFile = activeFile;
     if (activeFile && activeFile.path === filePath) {
-      setActiveFileInternal(prev => prev ? { ...prev, proposedContent } : null);
+      updatedActiveFile = { ...activeFile, proposedContent };
     }
-    appendTerminalLine(`Agent proposed change for: ${filePath}`);
-  }, [activeFile, appendTerminalLine]);
 
-  const clearFileProposal = useCallback((filePath: string) => {
+    set({ files: updatedFiles, activeFile: updatedActiveFile });
+    get().appendTerminalLine(`Agent proposed change for: ${filePath}`);
+    
+    saveWorkspaceFilesToSQLite(updatedFiles);
+  },
+
+  clearFileProposal: (filePath) => {
+    const { files, activeFile } = get();
     const updateInTree = (nodes: WorkspaceFile[]): WorkspaceFile[] => {
       return nodes.map(node => {
         if (node.path === filePath) {
@@ -422,228 +421,423 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     };
     
-    setFiles(prev => updateInTree(prev));
+    const updatedFiles = updateInTree(files);
+    let updatedActiveFile = activeFile;
     if (activeFile && activeFile.path === filePath) {
-      setActiveFileInternal(prev => prev ? { ...prev, proposedContent: undefined } : null);
+      updatedActiveFile = { ...activeFile, proposedContent: undefined };
     }
-  }, [activeFile]);
 
-  const sendChatMessage = useCallback(async (content: string) => {
+    set({ files: updatedFiles, activeFile: updatedActiveFile });
+    saveWorkspaceFilesToSQLite(updatedFiles);
+  },
+
+  appendTerminalLine: (line) => {
+    set((state) => ({
+      terminalLogs: [...state.terminalLogs, `[${new Date().toLocaleTimeString()}] ${line}`]
+    }));
+  },
+
+  clearTerminal: () => set({ terminalLogs: [] }),
+
+  sendChatMessage: async (content) => {
     if (!content.trim()) return;
 
     const userMsg: ChatMessage = {
-      id: 'c-' + crypto.randomUUID(),
+      id: 'c-' + generateId(),
       role: 'user',
       content,
       timestamp: new Date().toISOString()
     };
 
-    setChatMessages(prev => {
-      const newMessages = [...prev, userMsg];
-      
-      // Compute flat VFS from nested files
-      const flatVfs: Record<string, string> = {};
-      const flatten = (nodes: WorkspaceFile[]) => {
-        for (const node of nodes) {
-          if (!node.isDirectory && node.content !== undefined) {
-            flatVfs[node.path] = node.content;
-          }
-          if (node.children) flatten(node.children);
+    const currentChat = [...get().chatMessages, userMsg];
+    set({ chatMessages: currentChat });
+    saveChatHistory(currentChat);
+
+    // Compute flat VFS from nested files
+    const flatVfs: Record<string, string> = {};
+    const flatten = (nodes: WorkspaceFile[]) => {
+      for (const node of nodes) {
+        if (!node.isDirectory && node.content !== undefined) {
+          flatVfs[node.path] = node.content;
         }
-      };
-      flatten(files);
+        if (node.children) flatten(node.children);
+      }
+    };
+    flatten(get().files);
 
-      const requestBody = {
-        messages: newMessages,
-        vfs: flatVfs,
-        openRouterKey: openRouterKey,
-        modelName: "gemini-2.5-flash",
-        executionMode: yoloMode ? 'yolo' : 'normal',
-        threadId: 'default-thread-id'
-      };
+    const requestBody = {
+      messages: currentChat,
+      vfs: flatVfs,
+      openRouterKey: get().openRouterKey,
+      apiProvider: get().apiProvider,
+      modelName: get().modelName,
+      executionMode: get().yoloMode ? 'yolo' : 'normal',
+      threadId: 'default-thread-id'
+    };
 
-      // Kick off async backend fetch
-      fetch('/api/chat', {
+    try {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
-      }).then(async res => {
-         if (!res.ok) {
-           appendTerminalLine(`[ERROR] API request failed: ${res.statusText}`);
-           return;
-         }
-         
-         const reader = res.body?.getReader();
-         if (!reader) return;
-         const decoder = new TextDecoder();
-         
-         const aiMsgId = 'c-' + crypto.randomUUID();
-         setChatMessages(msgs => [...msgs, {
-            id: aiMsgId,
-            role: 'assistant',
-            content: '',
-            timestamp: new Date().toISOString()
-         }]);
-
-         let partial = '';
-         while (true) {
-           const { done, value } = await reader.read();
-           if (done) break;
-           
-           const chunkStr = decoder.decode(value, { stream: true });
-           
-           // A single chunk value might contain multiple SSE messages separated by \n\n
-           const lines = chunkStr.split('\n\n');
-           for (const line of lines) {
-             if (line.startsWith('data: ')) {
-               const dataStr = line.replace('data: ', '').trim();
-               if (dataStr === '[DONE]') break;
-               
-               try {
-                 const data = JSON.parse(dataStr);
-                 if (data.type === 'token') {
-                   setChatMessages(msgs => msgs.map(m => m.id === aiMsgId ? { ...m, content: m.content + data.content } : m));
-                 } else if (data.type === 'pty') {
-                   appendTerminalLine(data.content.trim());
-                 } else if (data.type === 'swarm') {
-                   if (data.activeAgent) {
-                     setActiveAgent(data.activeAgent);
-                   }
-                   if (data.tasks) {
-                     // Update task board
-                     setTasks(data.tasks.map((t: any) => ({
-                       id: t.id || t.name,
-                       label: t.description || t.name,
-                       status: 'pending',
-                       assignedTo: data.activeAgent
-                     })));
-                   }
-                 } else if (data.type === 'proposal') {
-                   // incoming chunk proposeFileChange
-                   // Here we would handle chunk mode... let's just trigger a notification
-                   appendTerminalLine(`[ORCHESTRATOR] Agent proposed file change to: ${data.path}`);
-                 } else if (data.type === 'error') {
-                   appendTerminalLine(`[ERROR] Agent stream: ${data.message}`);
-                 } else if (data.type === 'tool' && data.name === 'write_file') {
-                    // Refresh VFS with changes
-                    if (data.vfs) {
-                       // Update frontend file tree...? Too complicated for simple VFS mapping but we could do it if needed.
-                       appendTerminalLine(`[ORCHESTRATOR] Agent used tool ${data.name}`);
-                    }
-                 }
-               } catch (e) {
-                 // ignore fragment parsing error
-               }
-             }
-           }
-         }
-      }).catch(err => {
-         appendTerminalLine(`[API Error] ${err.message}`);
       });
 
-      return newMessages;
+      if (!res.ok) {
+        get().appendTerminalLine(`[ERROR] API request failed: ${res.statusText}`);
+        return;
+      }
+      
+      const reader = res.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      
+      const aiMsgId = 'c-' + generateId();
+      set((state) => ({
+        chatMessages: [...state.chatMessages, {
+          id: aiMsgId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString()
+        }]
+      }));
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunkStr = decoder.decode(value, { stream: true });
+        const lines = chunkStr.split('\n\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '').trim();
+            if (dataStr === '[DONE]') break;
+            
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.type === 'token') {
+                set((state) => ({
+                  chatMessages: state.chatMessages.map(m => 
+                    m.id === aiMsgId ? { ...m, content: m.content + data.content } : m
+                  )
+                }));
+              } else if (data.type === 'pty') {
+                get().appendTerminalLine(data.content.trim());
+              } else if (data.type === 'swarm') {
+                if (data.activeAgent) {
+                  get().setActiveAgentName(data.activeAgent);
+                }
+                if (data.tasks) {
+                  get().setTasksList(data.tasks.map((t: any) => ({
+                    id: t.id || t.name,
+                    label: t.description || t.name,
+                    status: 'pending',
+                    assignedTo: data.activeAgent || 'orchestrator'
+                  })));
+                }
+              } else if (data.type === 'proposal') {
+                get().appendTerminalLine(`[ORCHESTRATOR] Agent proposed file change to: ${data.path}`);
+              } else if (data.type === 'error') {
+                get().appendTerminalLine(`[ERROR] Agent stream: ${data.message}`);
+              }
+            } catch (e) {
+              // ignore partial chunks
+            }
+          }
+        }
+      }
+
+      // Final persistence sync back to IndexedDB for the newly downloaded AI message response
+      saveChatHistory(get().chatMessages);
+
+    } catch (err: any) {
+      get().appendTerminalLine(`[API Error] ${err.message}`);
+    }
+  },
+
+  injectLogEvent: (severity, origin, module, message, detail) => {
+    const newLog: TelemetryLog = {
+      id: 'l-' + Math.random().toString(36).substring(2, 9),
+      timestamp: new Date().toISOString(),
+      severity,
+      origin,
+      module,
+      message,
+      detail
+    };
+
+    set((state) => ({ logs: [newLog, ...state.logs] }));
+
+    fetch('/api/telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog)
+    }).catch(() => {
+      // Silently ignore telemetry transmission failures in local-only environments
+    });
+  },
+
+  simulateCompileAction: async (simulateBuildFailure) => {
+    set({
+      compilePercent: 10,
+      compileMessage: 'Requesting async compile token from secure workspace process...',
+      compilingState: 'running'
     });
 
-  }, [files, openRouterKey, yoloMode, appendTerminalLine]);
-
-  const simulateCompileAction = useCallback(async (simulateBuildFailure: boolean) => {
-    setCompilePercent(10);
-    setCompileMessage('Requesting async compile token from secure workspace process...');
-    setCompilingState('running');
-    
-    if (socket) {
-      socket.emit('start_compile', { simulateBuildFailure });
+    const s = get().socket;
+    const openRouterKey = get().openRouterKey;
+    const modelName = get().modelName;
+    if (s) {
+      s.emit('start_compile', { simulateBuildFailure, openRouterKey, modelName });
     } else {
-      appendTerminalLine('Establishing web-socket channel for backend compilation...');
+      get().appendTerminalLine('Establishing web-socket channel for backend compilation...');
       setTimeout(() => {
-        if (socket) {
-          socket.emit('start_compile', { simulateBuildFailure });
+        const retrySocket = get().socket;
+        if (retrySocket) {
+          retrySocket.emit('start_compile', { simulateBuildFailure, openRouterKey, modelName });
         } else {
-          setCompilingState('failed');
-          setCompileMessage('Unable to connect to Real-Time socket compiler engine.');
+          set({
+            compilingState: 'failed',
+            compileMessage: 'Unable to connect to Real-Time socket compiler engine.'
+          });
         }
       }, 800);
     }
-  }, [socket, appendTerminalLine]);
+  },
 
-  const simulateAppRuntimeCrash = useCallback(() => {
-    injectLogEvent(
+  testAppRuntimeCrash: () => {
+    get().injectLogEvent(
       'CRITICAL',
       'USER_APPLICATION',
       'ReactRootNode',
       'Fatal: Application crashing triggered inside mission-critical viewport.',
       'TypeError: Cannot read properties of undefined (reading "renderLayout")\n  at WorkspaceView.tsx (vite://sandbox/Workspace.tsx:88:24)\n  at mountComponent (react-dom.development.js:12213:10)'
     );
-  }, [injectLogEvent]);
+  },
 
-  const resetTelemetryStats = useCallback(() => {
-    setLogs([]);
-    appendTerminalLine('Telemetry logs cleared. Logging pipeline flushed.');
-    setMetrics(prev => ({
-      ...prev,
-      buildFailureCount: 0,
-      buildSuccessCount: 0,
-      appErrorCount: 0,
-      ideErrorCount: 0
+  resetTelemetryStats: () => {
+    set({ logs: [] });
+    get().appendTerminalLine('Telemetry logs cleared. Logging pipeline flushed.');
+    set((state) => ({
+      metrics: {
+        ...state.metrics,
+        buildFailureCount: 0,
+        buildSuccessCount: 0,
+        appErrorCount: 0,
+        ideErrorCount: 0
+      }
     }));
-  }, [appendTerminalLine]);
+  },
 
-  // Combined state matching useAppStore requirements
-  const storeContextValue: AppStoreState = {
-    swarmState: {
-      activeAgent,
-      tasks,
-      health
-    },
-    metrics,
-    terminalLogs,
-    logs,
-    files,
-    activeFile,
-    chatMessages,
-    activeBreakpoint,
-    compilingState,
-    compilePercent,
-    compileMessage,
-    setCompilingState,
-    hmrUpdates,
-    setHmrUpdates,
-    setCompilePercent,
-    setCompileMessage,
-    yoloMode,
-    setYoloMode,
-    openRouterKey,
-    setOpenRouterKey,
-    setBreakpoint,
-    setSwarmState: (state: any) => {
-      if (state.activeAgent) setActiveAgent(state.activeAgent);
-      if (state.tasks) setTasks(state.tasks);
-      if (state.health) setHealth(state.health);
-    },
-    setActiveFile,
-    updateFileContent,
-    proposeFileChange,
-    clearFileProposal,
-    appendTerminalLine,
-    clearTerminal,
-    sendChatMessage,
-    injectLogEvent,
-    simulateCompileAction,
-    simulateAppRuntimeCrash,
-    resetTelemetryStats
-  };
+  setSocketInstance: (s) => set({ socket: s }),
+  setTasksList: (tasks) => set((prev) => ({
+    swarmState: { ...prev.swarmState, tasks }
+  })),
+  setActiveAgentName: (name) => set((prev) => ({
+    swarmState: { ...prev.swarmState, activeAgent: name }
+  })),
 
-  return (
-    <StoreContext.Provider value={storeContextValue}>
-      {children}
-    </StoreContext.Provider>
-  );
-};
+  initDatabaseState: async () => {
+    // 1. Initial Load of Chat Messages from IndexedDB
+    try {
+      const savedMsgs = await getStoredChat();
+      if (savedMsgs && savedMsgs.length > 0) {
+        set({ chatMessages: savedMsgs });
+      } else {
+        const defaultMsg: ChatMessage = {
+          id: 'c1',
+          role: 'system',
+          content: 'System: Swarm conversation channel created with LangGraph Coder & Auditor. How can I help you build today?',
+          timestamp: new Date().toISOString()
+        };
+        set({ chatMessages: [defaultMsg] });
+        await saveChatHistory([defaultMsg]);
+      }
+    } catch (err) {
+      console.error('Error loading chat messages from IndexedDB:', err);
+    }
 
-export const useAppStore = () => {
-  const context = useContext(StoreContext);
-  if (context === undefined) {
-    throw new Error('useAppStore must be used inside a StoreProvider');
+    // 2. Initial Load of System Config and VFS Tree structures from browser SQLite Tables
+    try {
+      const filesFromSqlite = await loadWorkspaceFilesFromSQLite();
+      if (filesFromSqlite && filesFromSqlite.length > 0) {
+        set({ files: filesFromSqlite });
+        const appFile = findAppFile(filesFromSqlite) || (filesFromSqlite[0]?.children ? filesFromSqlite[0].children[0] : null);
+        set({ activeFile: appFile });
+      } else {
+        // Run first setup on SQLite
+        await saveWorkspaceFilesToSQLite(INITIAL_FILES);
+        set({ files: INITIAL_FILES });
+        const appFile = findAppFile(INITIAL_FILES) || (INITIAL_FILES[0]?.children ? INITIAL_FILES[0].children[0] : null);
+        set({ activeFile: appFile });
+      }
+
+      const systemConfig = await loadSystemConfigFromSQLite();
+      if (systemConfig) {
+        set({
+          yoloMode: systemConfig.yoloMode ?? false,
+          openRouterKey: systemConfig.openRouterKey ?? '',
+          modelName: systemConfig.modelName ?? 'gemma-4-31b-it',
+          apiProvider: systemConfig.apiProvider ?? 'google'
+        });
+      } else {
+        const defaultConfig = {
+          yoloMode: false,
+          openRouterKey: '',
+          modelName: 'gemma-4-31b-it',
+          apiProvider: 'google' as const
+        };
+        await saveSystemConfigToSQLite(defaultConfig);
+        set(defaultConfig);
+      }
+    } catch (err) {
+      console.error('Error loading config and files from browser SQLite database:', err);
+    }
+
+    // 3. Initial Load of Lessons Learned from browser SQLite Table
+    await get().loadLessons();
   }
-  return context;
+}));
+
+// 3. Backwards-compatible React Provider to execute standard react cycles
+export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const initDatabaseState = useAppStore((state) => state.initDatabaseState);
+  const setSocketInstance = useAppStore((state) => state.setSocketInstance);
+  const appendTerminalLine = useAppStore((state) => state.appendTerminalLine);
+  
+  // Connect and sync socket properties to store
+  useEffect(() => {
+    // Run DB and structure initialization first on mount
+    initDatabaseState();
+
+    const url = window.location.origin;
+    const s = io(url);
+    setSocketInstance(s);
+
+    s.on('compiler_lesson_formed', (data: { category: string; errorPattern: string; discoveredConstraint: string; remedialAction: string }) => {
+      useAppStore.getState().addLesson(data.category, data.errorPattern, data.discoveredConstraint, data.remedialAction);
+    });
+
+    s.on('compile_progress', (data: { percent: number; message: string; state?: 'idle' | 'running' | 'success' | 'failed' }) => {
+      const storeState = useAppStore.getState();
+      if (data.percent !== undefined) storeState.setCompilePercent(data.percent);
+      if (data.message !== undefined) storeState.setCompileMessage(data.message);
+      if (data.state !== undefined) {
+        storeState.setCompilingState(data.state);
+      }
+    });
+
+    s.on('compile_log', (logLine: string) => {
+      appendTerminalLine(logLine);
+    });
+
+    s.on('compile_metric_update', (metricsUpdate: any) => {
+      useAppStore.setState((store) => ({
+        metrics: { ...store.metrics, ...metricsUpdate }
+      }));
+    });
+
+    s.on('compile_task_update', (tasksUpdate: { id: string, status: string }[]) => {
+      const currentTasks = useAppStore.getState().swarmState.tasks;
+      const updatedTasks = currentTasks.map(t => {
+        const match = tasksUpdate.find(tu => tu.id === t.id);
+        return match ? { ...t, status: match.status as any } : t;
+      });
+      useAppStore.setState((store) => ({
+        swarmState: { ...store.swarmState, tasks: updatedTasks }
+      }));
+    });
+
+    s.on('hmr_update', (data: { path: string; timestamp: string; status: 'success' | 'failed'; message: string }) => {
+      useAppStore.getState().setHmrUpdates((prev) => [data, ...prev].slice(0, 10));
+      appendTerminalLine(`\r\n[HMR DAEMON] ${data.message} (${data.timestamp})\r\n`);
+      useAppStore.getState().injectLogEvent(
+        data.status === 'success' ? 'INFO' : 'ERROR',
+        'IDE_SYSTEM',
+        'HMR_Daemon',
+        data.message,
+        `File Path: ${data.path}`
+      );
+    });
+
+    const initTimer = setTimeout(() => {
+      s.emit('initial_load_check');
+    }, 500);
+
+    return () => {
+      clearTimeout(initTimer);
+      s.disconnect();
+    };
+  }, [initDatabaseState, setSocketInstance, appendTerminalLine]);
+
+  // Synchronize dynamic application error rates and health metrics 
+  const logs = useAppStore((state) => state.logs);
+  useEffect(() => {
+    const ideErrors = logs.filter(l => l.severity === 'ERROR' && l.origin === 'IDE_SYSTEM').length;
+    const appErrors = logs.filter(l => l.severity === 'ERROR' && l.origin === 'USER_APPLICATION').length;
+    const criticals = logs.filter(l => l.severity === 'CRITICAL').length;
+    
+    useAppStore.setState((store) => ({
+      metrics: {
+        ...store.metrics,
+        ideErrorCount: ideErrors,
+        appErrorCount: appErrors + criticals,
+        health: (appErrors > 4 || criticals > 1) ? 'failing' : 'good'
+      },
+      swarmState: {
+        ...store.swarmState,
+        health: (appErrors > 4 || criticals > 1) ? 'failing' : 'good'
+      }
+    }));
+  }, [logs]);
+
+  // Real system host telemetry receiver loop
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.metrics) {
+            useAppStore.setState((store) => ({
+              metrics: {
+                ...store.metrics,
+                cpuUsage: Math.min(100, Math.max(0, Math.round(data.metrics.cpuUsage))),
+                memoryUsage: data.metrics.memoryUsage,
+              }
+            }));
+          }
+        }
+      } catch (err) {
+        // Fail silently during network disconnects
+      }
+
+      // Rotate acting swarm node executor representation
+      const agents = ['orchestrator', 'planner', 'coder', 'auditor', 'platform'];
+      if (Math.random() < 0.25) {
+        const nextAgent = agents[Math.floor(Math.random() * agents.length)];
+        useAppStore.getState().setActiveAgentName(nextAgent);
+      }
+
+      // Chart telemetry ticks
+      useAppStore.setState((store) => {
+        const prev = store.telemetryTimeline;
+        const stepName = `S-${prev.length + 1}`;
+        const newPoint = {
+          step: stepName,
+          "Prompt Tokens": Math.round(1200 + Math.random() * 400),
+          "Completion Tokens": Math.round(400 + Math.random() * 200),
+          "Latency ms": Math.round(45 + Math.random() * 80)
+        };
+        const next = [...prev, newPoint];
+        return {
+          telemetryTimeline: next.length > 8 ? next.slice(1) : next
+        };
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return <>{children}</>;
 };

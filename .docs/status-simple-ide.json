@@ -1,0 +1,6 @@
+{
+  "completed": [],
+  "in_progress": ["phase-1-swarm-ide-interface-streamlining"],
+  "blocked": [],
+  "next": ["phase-2-swarm-to-filesystem-tool-integration"]
+}

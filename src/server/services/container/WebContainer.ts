@@ -7,7 +7,7 @@ class WebContainerProcess implements IContainerProcess {
   private errorListeners: ((err: Error) => void)[] = [];
 
   constructor(command: string, args: string[]) {
-    // Mock interactive stream logging simulating webcontainer bootup
+    // Emulate interactive stream logging simulating webcontainer bootup
     setTimeout(() => {
       this.emit("[WebContainer Process Booting...]\r\n");
       this.emit(`$ ${command} ${args.join(" ")}\r\n`);

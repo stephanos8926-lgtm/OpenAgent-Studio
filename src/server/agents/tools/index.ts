@@ -218,6 +218,14 @@ export const toolRegistryMetadata = [
     description: "Search the tree-sitter index for exact or fuzzy symbol configurations (functions, types, classes, methods).",
     schemaDescription: "Requires 'query' (string) and optional 'kind' (string/enum).",
     tip: "Allows the agents to perform highly targeted searches for function definitions and class references across the codebase to reduce context token bloat compared to full-file reading."
+  },
+  {
+    name: "get_build_logs",
+    canonicalName: "get_build_logs",
+    useCases: ["viewing compilation details", "understanding TS warnings/errors", "fetching static analysis feedback"],
+    description: "Read the latest workspace compilation, TypeScript, or bundler stdout/stderr output lines from .data/workspace-build.log.",
+    schemaDescription: "No arguments required.",
+    tip: "Always query this tool immediately following a compilation or build failure to inspect the precise compiler error messages, missing imports, or incorrect type constraints."
   }
 ];
 
@@ -883,6 +891,30 @@ export const createTools = (vfs: IFileSystem) => {
     }
   );
 
+  const get_build_logs = tool(
+    async () => {
+      try {
+        const buildLogPath = path.join(process.cwd(), '.data', 'workspace-build.log');
+        const fileExists = await fs.access(buildLogPath).then(() => true).catch(() => false);
+        if (fileExists) {
+          const content = await fs.readFile(buildLogPath, 'utf8');
+          if (content.length > 8000) {
+            return `[Build Log Truncated ...]\n` + content.slice(-8000);
+          }
+          return content;
+        }
+        return "No workspace build log found. Trigger a build run first or verify `.data/workspace-build.log` exists.";
+      } catch (err: any) {
+        return `Failed to read build logs: ${err.message}`;
+      }
+    },
+    {
+      name: "get_build_logs",
+      description: "Read the latest workspace compilation, TypeScript, or bundler stdout/stderr output lines from `.data/workspace-build.log`.",
+      schema: z.object({})
+    }
+  );
+
   return [
     write_file, 
     delete_file, 
@@ -897,6 +929,7 @@ export const createTools = (vfs: IFileSystem) => {
     find_symbol_references,
     grep_ast,
     tool_search,
-    apply_patch
+    apply_patch,
+    get_build_logs
   ];
 };

@@ -12,6 +12,7 @@ import { sharedCheckpointer } from "../agents/AgentFactory.js";
 import os from "os";
 import { containerService } from "../services/container/index.js";
 import { vfsLockService } from "../services/VfsLockService.js";
+import { notificationService } from "../services/NotificationService.js";
 
 const apiRouter = Router();
 
@@ -35,8 +36,8 @@ function getFallbackModels() {
       supported_properties: ["tools"]
     },
     {
-      id: "google/gemini-2.0-flash-lite-preview-02-05:free",
-      name: "Google: Gemini 2.0 Flash Lite Preview (free)",
+      id: "gemma-4-31b-it",
+      name: "Google: Gemma 4 31B (IT)",
       description: "Fast, highly intelligent model by Google, excellent for planning and quick iterations.",
       context_length: 1048576,
       pricing: { prompt: "0", completion: "0", request: "0" },
@@ -71,70 +72,64 @@ function getFallbackModels() {
 
 apiRouter.get("/models", async (req, res, next) => {
   try {
+    const provider = req.query.provider as string || 'openrouter';
     const now = Date.now();
     let rawModels = [];
 
+    // Simple cache per provider
     if (cachedModels && (now - lastFetchTime < CACHE_TTL_MS)) {
       rawModels = cachedModels;
     } else {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-      
-      try {
-        const response = await fetch("https://openrouter.ai/api/v1/models", {
-          signal: controller.signal,
-          headers: {
-            "Content-Type": "application/json",
-          }
-        });
-        clearTimeout(timeoutId);
+      if (provider === 'openrouter') {
+         const controller = new AbortController();
+         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+         
+         try {
+           const response = await fetch("https://openrouter.ai/api/v1/models", {
+             signal: controller.signal,
+             headers: {
+               "Content-Type": "application/json",
+             }
+           });
+           clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch models from OpenRouter: ${response.statusText}`);
-        }
-        const data = await response.json();
-        if (data && Array.isArray(data.data)) {
-          rawModels = data.data;
-          cachedModels = rawModels;
-          lastFetchTime = now;
-        } else {
-          throw new Error("Invalid response format from OpenRouter models API");
-        }
-      } catch (fetchErr: any) {
-        clearTimeout(timeoutId);
-        logger.error({ err: fetchErr }, "Failed to fetch OpenRouter models. Using fallback list.");
-        rawModels = getFallbackModels();
+           if (!response.ok) {
+             throw new Error(`Failed to fetch models from OpenRouter: ${response.statusText}`);
+           }
+           const data = await response.json();
+           if (data && Array.isArray(data.data)) {
+             rawModels = data.data;
+             cachedModels = rawModels;
+             lastFetchTime = now;
+           } else {
+             throw new Error("Invalid response format from OpenRouter models API");
+           }
+         } catch (fetchErr: any) {
+           clearTimeout(timeoutId);
+           logger.error({ err: fetchErr }, "Failed to fetch OpenRouter models. Using fallback list.");
+           rawModels = getFallbackModels();
+         }
+      } else if (provider === 'google') {
+        // Fallback or static list for google
+        rawModels = [
+          { id: "models/gemini-3.5-flash", name: "Google Gemini 3.5 Flash" },
+          { id: "models/gemini-3.1-flash-lite", name: "Google Gemini 3.1 Flash Lite" },
+          { id: "models/gemini-3.1-pro-preview", name: "Google Gemini 3.1 Pro" }
+        ];
       }
     }
 
-    const toolCallingModels = rawModels.filter((model: any) => {
-      const hasTools = model.supported_properties && (
+    const toolCallingModels = rawModels.map((model: any) => {
+      const hasTools = provider === 'google' || (model.supported_properties && (
         model.supported_properties.includes("tools") ||
         model.supported_properties.includes("function_call") ||
         model.supported_properties.includes("functions")
-      );
-      if (hasTools) return true;
-
-      const id = (model.id || "").toLowerCase();
-      const name = (model.name || "").toLowerCase();
-
-      const knownToolUse = 
-        id.includes("gemini") ||
-        id.includes("gpt-4") ||
-        id.includes("gpt-3.5") ||
-        id.includes("claude-3") ||
-        id.includes("qwen-2.5-coder") ||
-        id.includes("llama-3.1") ||
-        id.includes("llama-3.2") ||
-        id.includes("llama-3.3") ||
-        id.includes("mistral") ||
-        id.includes("owl-alpha") ||
-        id.includes("hermes-3") ||
-        name.includes("tooluse") ||
-        name.includes("fc");
-
-      return knownToolUse;
-    });
+      ));
+      return { ...model, hasTools };
+    }).filter((model: any) => model.hasTools).map((model: any) => ({
+      id: model.id,
+      name: model.name || model.id
+    }));
 
     res.json({ success: true, models: toolCallingModels });
   } catch (err) {
@@ -352,7 +347,23 @@ apiRouter.post("/terminal/command", async (req, res, next) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    const execCwd = cwd || process.cwd();
+    const path = await import("path");
+    const fs = await import("fs/promises");
+    
+    // Secure container path
+    const secureContainer = path.resolve(process.cwd(), ".workspaces/default");
+    await fs.mkdir(secureContainer, { recursive: true });
+
+    let execCwd = secureContainer;
+    if (cwd) {
+      const resolvedCwd = path.resolve(secureContainer, cwd);
+      // Ensure it stays within the secure container
+      if (resolvedCwd.startsWith(secureContainer)) {
+        execCwd = resolvedCwd;
+        await fs.mkdir(execCwd, { recursive: true });
+      }
+    }
+
     const isWin = os.platform() === 'win32';
     const shellExec = isWin ? 'cmd.exe' : 'sh';
     const shellArgs = isWin ? ['/c', command] : ['-c', command];
@@ -391,16 +402,22 @@ apiRouter.post("/save", async (req, res, next) => {
 
     const fs = await import('fs/promises');
     const path = await import('path');
-    const basePath = process.cwd(); // Assume CWD is workspace root
+    // Secure container path
+    const basePath = path.resolve(process.cwd(), ".workspaces/default"); 
 
-    // Save all files to CWD
+    // Save all files to the secure container
     for (const [filePath, content] of Object.entries(vfs)) {
-      const fullPath = path.join(basePath, filePath);
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
-      await fs.writeFile(fullPath, content as string, 'utf8');
+      // Prevent directory traversal
+      const normalizedPath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
+      const fullPath = path.join(basePath, normalizedPath);
+      
+      if (fullPath.startsWith(basePath)) {
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, content as string, 'utf8');
+      }
     }
 
-    res.json({ success: true, message: "Workspace files saved to host disk." });
+    res.json({ success: true, message: "Workspace files saved to isolated secure container." });
   } catch (err: any) {
     next(err);
   }
@@ -435,6 +452,21 @@ apiRouter.get("/telemetry/memory", async (req, res, next) => {
   }
 });
 
+apiRouter.post("/telemetry/crash-dump", async (req, res, next) => {
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const dumpPath = path.resolve(process.cwd(), '.data/client-crash.log');
+    const dumpData = JSON.stringify(req.body, null, 2);
+    
+    await fs.writeFile(dumpPath, dumpData, { encoding: 'utf-8', flag: 'a' });
+    
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 apiRouter.post("/telemetry/reset", async (req, res, next) => {
   try {
     const { telemetryService } = await import("../services/TelemetryService.js");
@@ -442,6 +474,77 @@ apiRouter.post("/telemetry/reset", async (req, res, next) => {
     res.json({
       success: true,
       message: "Fully wiped and reset all historical agent execution telemetry and self-evolved lesson registries."
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// AGENT OPERATIONS LOGGING & WORKFLOW MILESTONES ENDPOINTS
+// ═══════════════════════════════════════════════════════════
+
+apiRouter.post("/agent/logs", async (req, res, next) => {
+  try {
+    const { threadId, category, message, status, duration, metadata } = req.body;
+    
+    if (!category || !message || !status) {
+      throw new AppError("category, message, and status are required fields.", 400, "BAD_REQUEST");
+    }
+
+    const { agentLoggerService } = await import("../services/AgentLoggerService.js");
+    const newLogItem = agentLoggerService.logEvent(
+      threadId || "system-general",
+      category,
+      message,
+      status,
+      duration,
+      metadata
+    );
+
+    res.json({
+      success: true,
+      log: newLogItem
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+apiRouter.get("/agent/logs", async (req, res, next) => {
+  try {
+    const threadId = req.query.threadId ? String(req.query.threadId) : undefined;
+    const status = req.query.status ? String(req.query.status) : undefined;
+    const category = req.query.category ? String(req.query.category) : undefined;
+    const query = req.query.query ? String(req.query.query) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+
+    const { agentLoggerService } = await import("../services/AgentLoggerService.js");
+    const logs = agentLoggerService.getLogs({
+      threadId,
+      status,
+      category,
+      query,
+      limit
+    });
+
+    res.json({
+      success: true,
+      logs
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+apiRouter.post("/agent/logs/clear", async (req, res, next) => {
+  try {
+    const { agentLoggerService } = await import("../services/AgentLoggerService.js");
+    agentLoggerService.clearLogs();
+    res.json({
+      success: true,
+      message: "Successfully cleared all persistent agent operation logs."
     });
   } catch (err) {
     next(err);
@@ -604,6 +707,24 @@ apiRouter.get("/container/metrics", (req, res) => {
         free: 1048576 * 3646,
         percent: 11
       }
+    });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// NOTIFICATION SYSTEM ENDPOINTS
+// ═══════════════════════════════════════════════════════════
+
+apiRouter.post("/notifications", async (req, res, next) => {
+  try {
+    await notificationService.push(req.body);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ 
+      success: false, 
+      message: err.message || "Notification validation failed",
+      errors: err.errors 
     });
   }
 });

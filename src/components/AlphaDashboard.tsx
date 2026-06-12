@@ -20,7 +20,7 @@ export const AlphaDashboard: React.FC = () => {
           <DashboardCard 
             icon={<GitBranch className="w-5 h-5 text-emerald-400" />}
             title="Project Status"
-            description="All systems nominal. Swarm Graph active."
+            description="All systems nominal. Agent Workspace active."
           />
           <DashboardCard 
             icon={<Terminal className="w-5 h-5 text-amber-400" />}
@@ -34,7 +34,7 @@ export const AlphaDashboard: React.FC = () => {
           />
           <DashboardCard 
             icon={<Bug className="w-5 h-5 text-purple-400" />}
-            title="Telemetry"
+            title="Workflow Logs"
             description="Real-time coherence monitoring active."
           />
         </div>

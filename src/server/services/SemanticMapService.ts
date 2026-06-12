@@ -229,7 +229,11 @@ class SemanticMapService {
     const parser = new Parser();
     parser.setLanguage(language);
 
-    const tree = parser.parse(content);
+    const chunkInput = (offset: number) => {
+      if (offset >= content.length) return null;
+      return content.slice(offset, offset + 1024);
+    };
+    const tree = parser.parse(chunkInput);
     const symbols: CodeSymbol[] = [];
     const relativePath = path.relative(this.rootPath, filePath) || filePath;
 
@@ -392,7 +396,11 @@ class SemanticMapService {
     const parser = new Parser();
     parser.setLanguage(language);
 
-    const tree = parser.parse(content);
+    const chunkInput = (offset: number) => {
+      if (offset >= content.length) return null;
+      return content.slice(offset, offset + 1024);
+    };
+    const tree = parser.parse(chunkInput);
     const symbolsText: string[] = [];
 
     function traverse(node: Parser.SyntaxNode | null, isExported: boolean = false) {
